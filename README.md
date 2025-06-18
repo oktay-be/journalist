@@ -1,7 +1,7 @@
 # Journalist
 
-[![PyPI version](https://badge.fury.io/py/journalist.svg)](https://badge.fury.io/py/journalist)
-[![Python Versions](https://img.shields.io/pypi/pyversions/journalist)](https://pypi.org/project/journalist/)
+[![PyPI version](https://badge.fury.io/py/journalist.svg)](https://badge.fury.io/py/journ4list)
+[![Python Versions](https://img.shields.io/pypi/pyversions/journalist)](https://pypi.org/project/journ4list/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Tests](https://github.com/username/journalist/workflows/Tests/badge.svg)](https://github.com/username/journalist/actions)
 [![Coverage](https://codecov.io/gh/username/journalist/branch/main/graph/badge.svg)](https://codecov.io/gh/username/journalist)
