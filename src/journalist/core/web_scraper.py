@@ -186,11 +186,9 @@ class WebScraper:
                 if not extracted_content:
                     logger.warning(f"Failed to extract quality content from {normalized_url}")
                     return None
-                
-                # Prepare article data
+                  # Prepare article data
                 article_data = {
                     'url': normalized_url,
-                    'original_url': original_url,
                     'scraped_at': datetime.now().isoformat(),
                     'keywords_used': keywords,
                     'title': extracted_content.get('title', ''),
@@ -294,3 +292,41 @@ class WebScraper:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Async context manager exit"""
         await self.session_manager.__aexit__(exc_type, exc_val, exc_tb)
+
+    def create_source_session_data(self, grouped_sources: Dict[str, Dict[str, Any]], session_metadata: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Create source-specific session data structures.
+        
+        Args:
+            grouped_sources: Articles grouped by source domain
+            session_metadata: Metadata from scraping session
+            
+        Returns:
+            List of source-specific session data dictionaries
+        """
+        try:
+            source_session_data_list = []
+            
+            for domain, source_data in grouped_sources.items():
+                # Create source-specific session data
+                source_session_item = {
+                    'source_domain': source_data['source_domain'],
+                    'source_url': source_data['source_url'],
+                    'articles': source_data['articles'],
+                    'articles_count': source_data['articles_count'],
+                    'saved_at': datetime.now().isoformat(),
+                    'session_metadata': {
+                        **session_metadata,
+                        'source_specific': True,
+                        'source_domain': domain,
+                        'articles_scraped': source_data['articles_count']
+                    }
+                }
+                
+                source_session_data_list.append(source_session_item)
+            
+            return source_session_data_list
+            
+        except Exception as e:
+            logger.error(f"Error creating source session data: {e}")
+            return []

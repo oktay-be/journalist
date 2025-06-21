@@ -1,0 +1,962 @@
+diff --git a/.archive/journalist_refactoring_plan.md b/.archive/journalist_refactoring_plan.md
+new file mode 100644
+index 0000000..25e2c6a
+--- /dev/null
++++ b/.archive/journalist_refactoring_plan.md
+@@ -0,0 +1,283 @@
++# Journalist.py Refactoring Plan - Article Processing Extraction
++
++## Overview
++Extract the article processing logic (starting from line 211) into a separate `process_articles` method that handles both persistence modes and creates source-specific session data files.
++
++## Current State Analysis
++
++### Current Code Structure (Lines 211-289)
++The current code in the `read()` method handles:
++1. Processing task results from web scraping
++2. Filtering articles by date 
++3. Saving individual articles to files (if persist=True)
++4. Saving unified session data to `session_data.json` (if persist=True)
++5. Storing articles in memory (if persist=False)
++6. Preparing final result structure
++
++### Problems with Current Structure
++1. **Single Responsibility Violation**: The `read()` method is doing too much
++2. **Unified Session Data**: Only one `session_data.json` file regardless of source
++3. **Code Duplication**: Similar logic for persist=True and persist=False cases
++4. **Inconsistent Return Data**: Different data structures depending on persistence mode
++
++## Proposed Refactoring
++
++### New Method: `process_articles`
++
++#### Method Signature
++```python
++def process_articles(
++    self, 
++    scraped_articles: List[Dict[str, Any]], 
++    original_urls: List[str],
++    session_metadata: Dict[str, Any]
++) -> List[Dict[str, Any]]:
++```
++
++#### Parameters
++- `scraped_articles`: Raw articles from web scraper
++- `original_urls`: Original URLs provided by user for source identification
++- `session_metadata`: Metadata from scraping session
++
++#### Return Value
++- **Always returns the same structure regardless of persist mode**
++- List of source-specific session data dictionaries (content of session_data_<url_sanitized>.json files)
++
++### Implementation Plan
++
++#### Step 1: Extract Domain Utility Functions
++```python
++def _sanitize_url_for_filename(self, url: str) -> str:
++    """Convert URL to filename-safe string"""
++    # Remove protocol, replace special chars with underscores
++    # Example: https://www.fanatik.com.tr -> www_fanatik_com_tr
++    
++def _extract_domain_from_url(self, url: str) -> str:
++    """Extract domain from URL"""
++    # Example: https://www.fanatik.com.tr/path -> www.fanatik.com.tr
++```
++
++#### Step 2: Article Grouping Logic
++```python
++def _group_articles_by_source(self, articles: List[Dict], original_urls: List[str]) -> Dict[str, Dict]:
++    """Group articles by source URL and create source-specific data"""
++    # Returns: {
++    #   'www.fanatik.com.tr': {
++    #     'source_url': 'https://www.fanatik.com.tr',
++    #     'source_domain': 'www.fanatik.com.tr', 
++    #     'articles': [...],
++    #     'articles_count': 5
++    #   }
++    # }
++```
++
++#### Step 3: Source Session Data Creation
++```python
++def _create_source_session_data(self, grouped_articles: Dict, session_metadata: Dict) -> List[Dict]:
++    """Create source-specific session data structures"""
++    # Creates the final data structure that will be:
++    # 1. Saved as session_data_<url_sanitized>.json files (if persist=True)
++    # 2. Returned regardless of persistence mode
++```
++
++#### Step 4: Main Process Articles Method
++```python
++def process_articles(
++    self, 
++    scraped_articles: List[Dict[str, Any]], 
++    original_urls: List[str],
++    session_metadata: Dict[str, Any]
++) -> List[Dict[str, Any]]:
++    """
++    Process articles with filtering, saving, and source segregation.
++    
++    Always returns the same data structure regardless of persistence mode.
++    """
++    # 1. Filter articles by date
++    filtered_articles = self._filter_articles_by_date(scraped_articles)
++    
++    # 2. Group articles by source
++    grouped_articles = self._group_articles_by_source(filtered_articles, original_urls)
++    
++    # 3. Create source-specific session data
++    source_session_data_list = self._create_source_session_data(grouped_articles, session_metadata)
++    
++    # 4. Handle persistence (if enabled)
++    if self.persist and self.file_manager:
++        # Save individual articles
++        self._save_individual_articles(filtered_articles)
++        
++        # Save source-specific session data files
++        self._save_source_session_files(source_session_data_list)
++    else:
++        # Store in memory for non-persistent mode
++        self.memory_articles.extend(filtered_articles)
++    
++    # 5. Always return the same structure
++    return source_session_data_list
++```
++
++#### Step 5: Supporting Methods
++```python
++def _save_individual_articles(self, articles: List[Dict]) -> None:
++    """Save individual articles to files"""
++    # Extract current article saving logic
++    
++def _save_source_session_files(self, source_session_data_list: List[Dict]) -> None:
++    """Save source-specific session data files"""
++    # For each source in source_session_data_list:
++    #   - Generate filename: session_data_<sanitized_url>.json  
++    #   - Save using file_manager.save_json_data()
++```
++
++### Updated read() Method Structure
++
++#### Before (Lines 211-289)
++```python
++# Process results based on task type
++for i, (task_type, _) in enumerate(tasks):
++    # ... 60+ lines of processing logic
++    
++# Prepare final result
++result = {
++    'articles': articles,
++    # ... rest of result
++}
++```
++
++#### After
++```python
++# Process results based on task type  
++for i, (task_type, _) in enumerate(tasks):
++    result = results[i]
++    
++    if isinstance(result, Exception):
++        logger.error("Session [%s]: Error in %s task: %s", session_id, task_type, result, exc_info=True)
++    else:
++        if task_type == 'web_scrape' and result and isinstance(result, dict):
++            # Extract data from scraper result
++            scraped_articles = result.get('articles', [])
++            session_metadata = result.get('session_metadata', {})
++            
++            # Process articles through new method
++            source_session_data_list = self.process_articles(
++                scraped_articles=scraped_articles,
++                original_urls=scrape_urls_for_session, 
++                session_metadata=session_metadata
++            )
++            
++            articles.extend(source_session_data_list)
++
++# Prepare final result with source-specific data
++result = {
++    'source_session_data': source_session_data_list,
++    'session_id': session_id,
++    'extraction_summary': {
++        # ... existing fields
++        'sources_processed': len(source_session_data_list)
++    }
++}
++```
++
++## File Structure Changes
++
++### Current Structure
++```
++session_folder/
++├── articles/
++│   ├── article_1.json
++│   └── article_2.json  
++└── session_data.json  # Single unified file
++```
++
++### New Structure
++```
++session_folder/
++├── articles/
++│   ├── article_1.json
++│   └── article_2.json
++├── session_data_www_fanatik_com_tr.json    # Source-specific
++├── session_data_www_fotomac_com_tr.json    # Source-specific  
++└── session_data_www_ntvspor_net.json       # Source-specific
++```
++
++### Source Session Data File Content
++```json
++{
++  "source_url": "https://www.fanatik.com.tr",
++  "source_domain": "www.fanatik.com.tr", 
++  "saved_at": "2025-06-21T14:30:55.123456",
++  "articles_count": 5,
++  "articles": [
++    {
++      "title": "Fenerbahçe transfer haberi...",
++      "url": "https://www.fanatik.com.tr/...",
++      "content": "...",
++      "published_at": "2025-06-21T10:00:00"
++    }
++  ],
++  "session_metadata": {
++    "session_id": "20250621_143055_123456",
++    "source_specific": true,
++    "articles_scraped": 5,
++    "scraper_version": "modular-v1.1"
++  }
++}
++```
++
++## Benefits of This Refactoring
++
++### 1. Single Responsibility
++- `read()` method focuses on orchestration
++- `process_articles()` handles all article processing logic
++
++### 2. Consistent Return Data
++- Same data structure returned regardless of persistence mode
++- Source-specific information always available
++
++### 3. Source Segregation
++- Each news source gets its own session data file
++- Easier to analyze performance per source
++- Better organization for multiple sources
++
++### 4. Maintainability
++- Cleaner, more focused methods
++- Easier to test individual components
++- Reduced code duplication
++
++### 5. Extensibility  
++- Easy to add new processing steps
++- Source-specific processing can be added
++- Different storage backends can be supported
++
++## Implementation Steps
++
++1. **Create utility methods** (`_sanitize_url_for_filename`, `_extract_domain_from_url`)
++2. **Implement article grouping** (`_group_articles_by_source`)
++3. **Create session data builder** (`_create_source_session_data`)
++4. **Extract file saving logic** (`_save_individual_articles`, `_save_source_session_files`)
++5. **Implement main process_articles method**
++6. **Update read() method** to use new process_articles method
++7. **Update return structure** to include source-specific data
++8. **Test with Turkish sports URLs** to verify source segregation
++
++## Testing Strategy
++
++### Test Cases
++1. **Single Source**: One URL (e.g., fanatik.com.tr)
++2. **Multiple Sources**: Two URLs (fanatik.com.tr, fotomac.com.tr)  
++3. **Persist=True**: Verify files are created correctly
++4. **Persist=False**: Verify same data structure returned
++5. **No Articles**: Handle empty results gracefully
++6. **Mixed Results**: Some sources succeed, others fail
++
++### Validation Points
++1. Source session data files created with correct naming
++2. Articles properly grouped by source domain
++3. Same data structure returned for both persistence modes
++4. Individual article files still saved correctly
++5. Final result includes source-specific data structure
++
++---
++
++*This refactoring implements source-specific functionality with improved code organization.*
+diff --git a/.archive/segregation_refactoring.md b/.archive/segregation_refactoring.md
+new file mode 100644
+index 0000000..91f8ca8
+--- /dev/null
++++ b/.archive/segregation_refactoring.md
+@@ -0,0 +1,322 @@
++# Session Data Segregation Refactoring Plan
++
++## Overview
++This refactoring will segregate session data by source domain/hostname instead of having one unified `session_data.json` file. Each source will have its own session data file, and the system will return a list of these JSON files.
++
++## Current Architecture Analysis
++
++### Current Session Data Structure
++- **Location**: `{session_path}/session_data.json`
++- **Content Structure**:
++  ```json
++  {
++    "saved_at": "2025-06-21T...",
++    "articles_count": 10,
++    "articles": [...],
++    "session_metadata": {
++      "session_id": "...",
++      "start_time": "...",
++      "end_time": "...",
++      "duration_seconds": 123.45,
++      "links_discovered": 25,
++      "articles_scraped": 10,
++      "success_rate": 0.4,
++      "scraper_version": "modular-v1.0"
++    }
++  }
++  ```
++
++### Current File Structure
++```
++.journalist_workspace/
++└── {session_id}/
++    ├── articles/
++    │   ├── article_abc123.json
++    │   └── article_def456.json
++    └── session_data.json  ← Current unified file
++```
++
++## Proposed New Architecture
++
++### New Session Data Structure
++```
++.journalist_workspace/
++└── {session_id}/
++    ├── articles/
++    │   ├── article_abc123.json
++    │   └── article_def456.json
++    ├── session_data_www_fanatik_com_tr.json
++    ├── session_data_www_fotomac_com_tr.json
++    └── session_data_www_ntvspor_net.json
++```
++
++### New Session Data File Content
++Each source-specific session data file will contain:
++```json
++{
++  "source_domain": "www.fanatik.com.tr",
++  "source_url": "https://www.fanatik.com.tr",
++  "saved_at": "2025-06-21T...",
++  "articles_count": 5,
++  "articles": [...],  // Only articles from this source
++  "session_metadata": {
++    "session_id": "...",
++    "source_specific": true,
++    "start_time": "...",
++    "end_time": "...",
++    "duration_seconds": 67.89,
++    "links_discovered": 12,
++    "articles_scraped": 5,
++    "success_rate": 0.42,
++    "scraper_version": "modular-v1.1"
++  }
++}
++```
++
++## Files to Modify
++
++### 1. Core Files
++
++#### 1.1 `src/journalist/core/file_manager.py`
++**Changes needed:**
++- Add method `save_source_specific_session_data(domain: str, session_data: dict)`
++- Add method `load_source_specific_session_data(domain: str) -> dict`
++- Add method `list_source_session_files() -> List[str]`
++- Add method `get_source_session_filename(domain: str) -> str`
++- Add utility method `sanitize_domain_for_filename(domain: str) -> str`
++
++**New methods to implement:**
++```python
++def sanitize_domain_for_filename(self, domain: str) -> str:
++    """Convert domain to safe filename format"""
++    # www.fanatik.com.tr -> www_fanatik_com_tr
++    
++def get_source_session_filename(self, domain: str) -> str:
++    """Generate session filename for specific domain"""
++    # Returns: session_data_www_fanatik_com_tr.json
++    
++def save_source_specific_session_data(self, domain: str, session_data: dict) -> bool:
++    """Save session data for specific source domain"""
++    
++def load_source_specific_session_data(self, domain: str) -> Optional[dict]:
++    """Load session data for specific source domain"""
++    
++def list_source_session_files(self) -> List[str]:
++    """List all source-specific session data files"""
++    
++def load_all_source_session_data(self) -> List[dict]:
++    """Load all source session data files and return as list"""
++```
++
++#### 1.2 `src/journalist/core/web_scraper.py`
++**Changes needed:**
++- Modify `execute_scraping_for_session()` to group articles by source domain
++- Return source-segregated data instead of unified session_data
++- Add source domain extraction logic
++
++**New method structure:**
++```python
++async def execute_scraping_for_session(self, session_id: str, keywords: List[str], 
++                                     sites: Optional[List[str]] = None, scrape_depth: int = 1) -> Dict[str, Any]:
++    # ... existing logic ...
++    
++    # NEW: Group articles by source domain
++    articles_by_source = self._group_articles_by_source(scraped_articles, sites or [])
++    
++    # NEW: Create source-specific session data
++    source_session_data = {}
++    for domain, articles in articles_by_source.items():
++        source_session_data[domain] = {
++            'source_domain': domain,
++            'source_url': self._get_original_url_for_domain(domain, sites or []),
++            'articles': articles,
++            'session_metadata': self._create_source_session_metadata(
++                session_id, session_start, domain, articles
++            )
++        }
++    
++    return {
++        'source_session_data': source_session_data,
++        'unified_articles': scraped_articles,  # For backward compatibility
++        'session_metadata': self._create_session_metadata(session_id, session_start, len(processed_links), len(scraped_articles))
++    }
++```
++
++**New helper methods to add:**
++```python
++def _group_articles_by_source(self, articles: List[dict], original_urls: List[str]) -> Dict[str, List[dict]]:
++    """Group articles by their source domain"""
++    
++def _get_original_url_for_domain(self, domain: str, original_urls: List[str]) -> str:
++    """Get the original URL that corresponds to a domain"""
++    
++def _create_source_session_metadata(self, session_id: str, start_time: datetime, 
++                                   domain: str, articles: List[dict]) -> dict:
++    """Create session metadata for a specific source"""
++```
++
++#### 1.3 `src/journalist/journalist.py`
++**Changes needed:**
++- Modify the session data saving logic in the `read()` method
++- Instead of saving unified `session_data.json`, save multiple source-specific files
++- Update the return structure to include source-specific data
++
++**Key changes in `read()` method:**
++```python
++# OLD CODE (around line 242):
++session_file = os.path.join(self.file_manager.base_data_dir, "session_data.json")
++session_payload = {
++    'saved_at': datetime.now().isoformat(),
++    'articles_count': len(filtered_articles),
++    **filtered_result
++}
++self.file_manager.save_json_data(session_file, session_payload, data_type="session")
++
++# NEW CODE:
++if self.persist:
++    # Save source-specific session data
++    source_session_data = result.get('source_session_data', {})
++    saved_source_files = []
++    
++    for domain, source_data in source_session_data.items():
++        # Filter articles by date for this source
++        source_articles = source_data.get('articles', [])
++        filtered_source_articles = self._filter_articles_by_date(source_articles)
++        
++        # Update source data with filtered articles
++        source_data_filtered = source_data.copy()
++        source_data_filtered['articles'] = filtered_source_articles
++        source_data_filtered['saved_at'] = datetime.now().isoformat()
++        source_data_filtered['articles_count'] = len(filtered_source_articles)
++        
++        # Save source-specific session data
++        success = self.file_manager.save_source_specific_session_data(domain, source_data_filtered)
++        if success:
++            filename = self.file_manager.get_source_session_filename(domain)
++            saved_source_files.append(filename)
++```
++
++### 2. Utility Functions
++
++#### 2.1 New utility in `src/journalist/core/network_utils.py`
++**Add domain extraction helper:**
++```python
++def extract_domain_from_url(url: str) -> str:
++    """Extract clean domain name for filename purposes"""
++    # https://www.fanatik.com.tr -> www.fanatik.com.tr
++    
++def sanitize_domain_for_filename(domain: str) -> str:
++    """Convert domain to filename-safe format"""
++    # www.fanatik.com.tr -> www_fanatik_com_tr
++```
++
++### 3. Return Value Changes
++
++#### 3.1 Updated Return Structure
++The `journalist.read()` method will return:
++```python
++{
++    'articles': [...],  # All articles (for backward compatibility)
++    'source_session_files': [
++        'session_data_www_fanatik_com_tr.json',
++        'session_data_www_fotomac_com_tr.json'
++    ],
++    'source_session_data': {
++        'www.fanatik.com.tr': { ... },
++        'www.fotomac.com.tr': { ... }
++    },
++    'extraction_summary': {
++        'urls_processed': 2,
++        'articles_extracted': 10,
++        'sources_processed': 2,
++        'extraction_time_seconds': 45.67
++    }
++}
++```
++
++## Implementation Steps
++
++### Phase 1: Core Infrastructure
++1. **Add domain utilities** to `network_utils.py`
++2. **Extend FileManager** with source-specific methods
++3. **Create unit tests** for new FileManager methods
++
++### Phase 2: Web Scraper Updates
++1. **Modify WebScraper** to group articles by source
++2. **Update session metadata creation** for source-specific data
++3. **Test with multiple sources**
++
++### Phase 3: Journalist Class Updates
++1. **Update Journalist.read()** method to handle source-specific saving
++2. **Modify return structure** to include source information
++3. **Ensure backward compatibility** with existing API
++
++### Phase 4: Testing & Documentation
++1. **Update test scripts** (especially `test_turkish_sports.py`)
++2. **Update documentation** to reflect new structure
++3. **Add examples** showing source-specific data access
++
++## Backward Compatibility
++
++### Maintaining Compatibility
++- Keep existing `articles` field in return value
++- Add new fields without breaking existing consumers
++- Provide method to get unified session data if needed
++
++### Migration Path
++- Old code will continue to work with the `articles` field
++- New code can access source-specific data via new fields
++- Add utility method to convert source-specific data back to unified format
++
++## Benefits
++
++### Advantages of This Approach
++1. **Source Isolation**: Each news source's data is stored separately
++2. **Better Organization**: Easier to analyze performance per source
++3. **Scalability**: Can handle many sources without massive single files
++4. **Debugging**: Easier to identify issues with specific sources
++5. **Flexibility**: Can process sources independently
++
++### Use Cases Enabled
++1. **Source-specific analysis**: Performance metrics per news site
++2. **Selective reprocessing**: Re-run only failed sources
++3. **Source comparison**: Compare article quality across sources
++4. **Incremental processing**: Process new sources without affecting existing data
++
++## Files to Create/Modify Summary
++
++### New Files
++- None (all changes in existing files)
++
++### Modified Files
++1. `src/journalist/core/file_manager.py` - Add source-specific session methods
++2. `src/journalist/core/web_scraper.py` - Add source grouping logic
++3. `src/journalist/journalist.py` - Update session saving and return structure
++4. `src/journalist/core/network_utils.py` - Add domain utilities
++5. `test_turkish_sports.py` - Update to demonstrate new functionality
++6. Documentation files in `docs/` - Update API reference
++
++### Test Files to Update
++1. `tests/unit/test_journalist.py` - Add tests for source-specific functionality
++2. `tests/unit/test_config.py` - Update configuration tests if needed
++3. Add new test file `tests/unit/test_source_segregation.py`
++
++## Risk Assessment
++
++### Low Risk
++- All changes are additive to existing functionality
++- Backward compatibility maintained
++- Existing tests should continue to pass
++
++### Medium Risk
++- File system structure changes (but in isolated session directories)
++- Return value structure changes (but backward compatible)
++
++### Mitigation Strategies
++- Comprehensive testing with multiple sources
++- Gradual rollout starting with non-persistent mode
++- Fallback to unified format if source-specific fails
++
++---
++
++*This plan ensures a clean separation of session data by source while maintaining full backward compatibility and providing enhanced functionality for source-specific analysis.*
+diff --git a/.gitignore b/.gitignore
+index 11ec7a4..86d5728 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -68,7 +68,6 @@ Thumbs.db
+ *.json
+ *cache/
+ *workspace/
+-*archive/
+ example_project
+ tmp*
+ 
+diff --git a/START_GUIDE.md b/START_GUIDE.md
+new file mode 100644
+index 0000000..3c270d2
+--- /dev/null
++++ b/START_GUIDE.md
+@@ -0,0 +1,184 @@
++# Journalist Library - Start Guide
++
++This guide documents the setup and testing process for the journalist library with a focus on Turkish sports news extraction.
++
++## Project Overview
++
++The journalist library is a Python tool for web scraping and content extraction from news websites. It supports keyword-based filtering and can extract articles from multiple URLs concurrently.
++
++## Environment Setup
++
++### 1. Python Environment Configuration
++
++The project uses Python with pip-tools for dependency management. Follow these steps to set up your environment:
++
++```bash
++# Configure Python environment
++python -m venv venv
++venv\Scripts\activate
++
++# Install pip-tools
++pip install pip-tools
++
++# Compile requirements from requirements.in
++pip-compile requirements.in
++
++# Install all dependencies
++pip install -r requirements.txt
++
++# Install the package in development mode
++pip install -e .
++```
++
++### 2. Project Structure
++
++```
++journalist/
++├── src/journalist/           # Main package
++│   ├── __init__.py
++│   ├── journalist.py         # Main Journalist class
++│   ├── config.py            # Configuration management
++│   ├── core/                # Core functionality
++│   └── extractors/          # Content extractors
++├── examples/                # Example scripts
++├── tests/                   # Test suite
++├── docs/                    # Documentation
++├── requirements.in          # Dependency specifications
++├── requirements.txt         # Compiled dependencies
++└── README.md               # Project documentation
++```
++
++## Test Case: Turkish Sports News
++
++### Objective
++Extract news articles about Fenerbahçe and Galatasaray from Turkish sports websites.
++
++### Target Configuration
++- **Keywords**: `["fenerbahce", "galatasaray"]`
++- **URLs**: 
++  - `https://www.fanatik.com.tr`
++  - `https://www.fotomac.com.tr`
++
++### Test Script
++
++Created `test_turkish_sports.py` with the following features:
++
++#### Key Components
++
++1. **Journalist Instance Configuration**:
++   ```python
++   journalist = Journalist(persist=True, scrape_depth=1)
++   ```
++
++2. **Async Content Extraction**:
++   ```python
++   result = await journalist.read(
++       urls=urls,
++       keywords=keywords
++   )
++   ```
++
++3. **Result Processing**:
++   - Article extraction and display
++   - Extraction summary with metrics
++   - Error handling and reporting
++
++#### Script Features
++
++- **Comprehensive Logging**: Detailed output showing extraction progress
++- **Article Display**: Shows title, URL, publication date, and content preview
++- **Keyword Matching**: Displays which keywords were matched in each article
++- **Performance Metrics**: Shows processing time and article counts
++- **Error Handling**: Catches and displays any extraction errors
++- **Resource Cleanup**: Properly closes journalist instance
++
++### Running the Test
++
++```bash
++# Activate virtual environment
++venv\Scripts\activate
++
++# Run the Turkish sports news test
++python test_turkish_sports.py
++```
++
++### Expected Output Format
++
++```
++🚀 Starting Turkish Sports News Extraction Test
++============================================================
++📰 Target URLs: ['https://www.fanatik.com.tr', 'https://www.fotomac.com.tr']
++🔍 Keywords: ['fenerbahce', 'galatasaray']
++------------------------------------------------------------
++⏳ Starting content extraction...
++✅ Content extraction completed!
++============================================================
++📄 Found X articles:
++------------------------------------------------------------
++
++🏆 Article 1:
++   Title: [Article Title]
++   URL: [Article URL]
++   Published: [Publication Date]
++   Content Preview: [First 200 characters]...
++   Matched Keywords: [Keywords found]
++----------------------------------------
++
++📊 Extraction Summary:
++   URLs Processed: 2
++   Articles Extracted: X
++   Extraction Time: X.XX seconds
++
++🎉 Test completed successfully!
++```
++
++## Library Features Demonstrated
++
++### Core Functionality
++- **Multi-URL Processing**: Concurrent extraction from multiple websites
++- **Keyword Filtering**: Content filtering based on specified keywords
++- **Async Operations**: Non-blocking asynchronous content extraction
++- **Persistence**: Option to cache results for improved performance
++
++### Content Extraction
++- **Multiple Extractors**: Uses various extraction methods for robust content retrieval
++- **Article Metadata**: Extracts titles, URLs, publication dates, and content
++- **Keyword Matching**: Identifies which keywords appear in each article
++
++### Error Handling
++- **Graceful Degradation**: Continues processing even if some URLs fail
++- **Detailed Error Reporting**: Provides specific error information
++- **Resource Management**: Proper cleanup of network resources
++
++## Configuration Options
++
++The journalist library supports various configuration options:
++
++- `persist`: Enable/disable result caching
++- `scrape_depth`: Control how deep to crawl linked pages
++- `keywords`: Filter content by specific terms
++- `urls`: Target websites for content extraction
++
++## Next Steps
++
++1. **Run the Test**: Execute the Turkish sports news test to validate setup
++2. **Explore Examples**: Check the `examples/` directory for more use cases
++3. **Read Documentation**: Review files in `docs/` for detailed API reference
++4. **Customize Configuration**: Modify test parameters for different scenarios
++
++## Troubleshooting
++
++### Common Issues
++- **Import Errors**: Ensure the virtual environment is activated
++- **Network Issues**: Check internet connectivity and website accessibility
++- **Dependency Issues**: Verify all requirements are installed correctly
++
++### Debug Information
++The test script includes comprehensive error reporting with:
++- Exception type and message
++- Full stack trace for debugging
++- Processing metrics for performance analysis
++
++---
++
++*This guide was generated during the initial setup and testing of the journalist library for Turkish sports news extraction.*
+diff --git a/requirements.txt b/requirements.txt
+index e1f2dfd..daa3e37 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -23,9 +23,7 @@ charset-normalizer==3.4.2
+ colorama==0.4.6
+     # via pytest
+ coverage[toml]==7.9.1
+-    # via
+-    #   coverage
+-    #   pytest-cov
++    # via pytest-cov
+ cssselect==1.3.0
+     # via readability-lxml
+ datefinder==0.7.3
+diff --git a/test_basic.py b/test_basic.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/test_turkish_sports.py b/test_turkish_sports.py
+new file mode 100644
+index 0000000..97ad28a
+--- /dev/null
++++ b/test_turkish_sports.py
+@@ -0,0 +1,118 @@
++#!/usr/bin/env python3
++"""
++Test script for Turkish sports news extraction
++Testing with Fenerbahçe and Galatasaray keywords on Turkish sports sites
++"""
++
++import asyncio
++import sys
++import os
++
++# Add the src directory to Python path for development
++sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
++
++from journalist import Journalist
++
++
++async def main():
++    """Main test function for Turkish sports news extraction"""
++    print("🚀 Starting Turkish Sports News Extraction Test")
++    print("=" * 60)
++    
++    # Create journalist instance with persistence and depth 1
++    journalist = Journalist(persist=True, scrape_depth=1)
++    
++    # Define test parameters
++    urls = [
++        "https://www.fanatik.com.tr"
++    ]
++    
++    keywords = ["fenerbahce", "mourinho", "aziz", "ali"]
++    
++    print(f"📰 Target URLs: {urls}")
++    print(f"🔍 Keywords: {keywords}")
++    print("-" * 60)
++    
++    try:
++        # Extract content from Turkish sports news sites
++        print("⏳ Starting content extraction...")
++        result = await journalist.read(
++            urls=urls,
++            keywords=keywords
++        )
++        
++        print("✅ Content extraction completed!")
++        print("=" * 60)
++        
++        # Display extracted articles
++        articles = result.get('articles', [])
++        print(f"📄 Found {len(articles)} articles:")
++        print("-" * 60)
++        
++        for i, article in enumerate(articles, 1):
++            print(f"\n🏆 Article {i}:")
++            print(f"   Title: {article.get('title', 'N/A')}")
++            print(f"   URL: {article.get('url', 'N/A')}")
++            print(f"   Published: {article.get('published_date', 'N/A')}")
++            print(f"   Content Preview: {article.get('content', '')[:200]}...")
++            if article.get('matched_keywords'):
++                print(f"   Matched Keywords: {article.get('matched_keywords')}")
++            print("-" * 40)
++          # Display extraction summary
++        summary = result.get('extraction_summary', {})
++        print(f"\n📊 Extraction Summary:")
++        print(f"   URLs Processed: {summary.get('urls_processed', 0)}")
++        print(f"   Articles Extracted: {summary.get('articles_extracted', 0)}")
++        print(f"   Sources Processed: {summary.get('sources_processed', 0)}")
++        print(f"   Extraction Time: {summary.get('extraction_time_seconds', 0):.2f} seconds")
++        
++        # Display source-specific information if available
++        source_session_files = result.get('source_session_files', [])
++        if source_session_files:
++            print(f"\n📂 Source Session Files:")
++            for filename in source_session_files:
++                print(f"   - {filename}")
++        
++        source_session_data = result.get('source_session_data', [])
++        if source_session_data:
++            print(f"\n🌐 Source-Specific Results:")
++            print("-" * 60)
++            for i, source_data in enumerate(source_session_data, 1):
++                domain = source_data.get('source_domain', 'Unknown')
++                source_url = source_data.get('source_url', 'N/A')
++                source_articles = source_data.get('articles', [])
++                
++                print(f"\n📍 Source {i}: {domain}")
++                print(f"   Original URL: {source_url}")
++                print(f"   Articles Found: {len(source_articles)}")
++                
++                # Show first few articles from this source
++                for j, article in enumerate(source_articles[:3], 1):
++                    print(f"   📄 Article {j}:")
++                    print(f"      Title: {article.get('title', 'N/A')[:60]}...")
++                    print(f"      URL: {article.get('url', 'N/A')}")
++                
++                if len(source_articles) > 3:
++                    print(f"   ... and {len(source_articles) - 3} more articles")
++                print("-" * 40)
++        
++        # Display any errors if occurred
++        errors = result.get('errors', [])
++        if errors:
++            print(f"\n⚠️  Errors encountered:")
++            for error in errors:
++                print(f"   - {error}")
++        
++        print("\n🎉 Test completed successfully!")
++        
++    except Exception as e:
++        print(f"❌ Error during extraction: {str(e)}")
++        print(f"Error type: {type(e).__name__}")
++        import traceback
++        traceback.print_exc()
++    
++
++
++if __name__ == "__main__":
++    # Run the async main function
++    asyncio.run(main())
+\ No newline at end of file
