@@ -142,6 +142,135 @@ class Journalist:
         
         return filtered_articles
 
+    def _group_articles_by_source(self, articles: List[Dict[str, Any]], original_urls: List[str]) -> Dict[str, Dict[str, Any]]:
+        """
+        Group articles by their source domain, ensuring each original URL has an entry.
+        
+        Args:
+            articles: List of article dictionaries
+            original_urls: List of original URLs provided by user
+            
+        Returns:
+            Dictionary mapping domain names to source data with articles
+        """
+        try:
+            # Import here to avoid circular imports
+            from .core.network_utils import get_domain
+            
+            grouped_sources = {}
+            
+            # Initialize all domains from original URLs first
+            for orig_url in original_urls:
+                domain = get_domain(orig_url)
+                if not domain:
+                    domain = f'unknown_{len(grouped_sources)}'
+                
+                if domain not in grouped_sources:
+                    grouped_sources[domain] = {
+                        'source_domain': domain,
+                        'source_url': orig_url,
+                        'articles': [],
+                        'articles_count': 0
+                    }
+            
+            # Now group articles into existing domains
+            for article in articles:
+                # Get article URL
+                article_url = article.get('url', '')
+                
+                if not article_url:
+                    # If no URL, assign to first available domain
+                    if original_urls:
+                        domain = get_domain(original_urls[0])
+                    else:
+                        domain = 'unknown'
+                else:
+                    domain = get_domain(article_url)
+                
+                if not domain:
+                    domain = 'unknown'
+                
+                # Find matching domain or create unknown entry
+                if domain not in grouped_sources:
+                    # This handles cases where articles come from domains not in original URLs
+                    grouped_sources[domain] = {
+                        'source_domain': domain,
+                        'source_url': article_url if article_url else domain,
+                        'articles': [],
+                        'articles_count': 0
+                    }
+               
+                # Add article to appropriate domain group
+                grouped_sources[domain]['articles'].append(article)
+                grouped_sources[domain]['articles_count'] += 1
+              # Log grouping results
+            for domain, source_data in grouped_sources.items():
+                logger.info(f"Grouped {source_data['articles_count']} articles for domain: {domain}")
+            
+            return grouped_sources
+            
+        except Exception as e:
+            logger.error(f"Error grouping articles by source: {e}")
+            # Fallback: ensure we have at least one entry per original URL
+            fallback_sources = {}
+            for i, orig_url in enumerate(original_urls):
+                domain = f'unknown_{i}'
+                fallback_sources[domain] = {
+                    'source_domain': domain,
+                    'source_url': orig_url,
+                    'articles': articles,
+                    'articles_count': len(articles)
+                }
+            return fallback_sources
+
+    def process_articles(
+        self, 
+        scraped_articles: List[Dict[str, Any]], 
+        original_urls: List[str],
+        session_metadata: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """
+        Process articles with filtering, saving, and source segregation.
+        
+        Always returns the same data structure regardless of persistence mode.
+        
+        Args:
+            scraped_articles: Raw articles from web scraper
+            original_urls: Original URLs provided by user for source identification
+            session_metadata: Metadata from scraping session
+            
+        Returns:
+            List of source-specific session data dictionaries
+        """
+        try:
+            # 1. Filter articles by date
+            filtered_articles = self._filter_articles_by_date(scraped_articles)
+            
+            # 2. Group articles by source
+            grouped_sources = self._group_articles_by_source(filtered_articles, original_urls)
+            
+            # 3. Create source-specific session data (delegated to WebScraper)
+            source_session_data_list = self.web_scraper.create_source_session_data(grouped_sources, session_metadata)
+            
+            # 4. Handle persistence (if enabled)
+            if self.persist and self.file_manager:
+                # Save individual articles (delegated to FileManager)
+                self.file_manager.save_individual_articles(filtered_articles)
+                
+                # Save source-specific session data files (delegated to FileManager)
+                saved_files = self.file_manager.save_source_session_files(source_session_data_list)
+                logger.info(f"Saved {len(saved_files)} source session files: {saved_files}")
+            else:
+                # Store in memory for non-persistent mode
+                self.memory_articles.extend(filtered_articles)
+            
+            # 5. Always return the same structure
+            return source_session_data_list
+            
+        except Exception as e:
+            logger.error(f"Error processing articles: {e}")
+            return []
+
     async def read(self, urls: List[str], keywords: Optional[List[str]] = None) -> Dict[str, Any]:
         """
         Extract content from the provided URLs with optional keyword filtering.
@@ -207,82 +336,41 @@ class Journalist:
             # Extract just the task objects for gather
             task_objects = [task[1] for task in tasks]
             results = await asyncio.gather(*task_objects, return_exceptions=True)
-            
-            # Process results based on task type
+              # Process results based on task type
             for i, (task_type, _) in enumerate(tasks):
                 result = results[i]
                 
                 if isinstance(result, Exception):
                     logger.error("Session [%s]: Error in %s task: %s", session_id, task_type, result, exc_info=True)
                 else:
-                    if task_type == 'web_scrape':                        # New modular WebScraper returns session data with articles and metadata
-                        if result and isinstance(result, dict):                            # Extract articles from the session data
+                    if task_type == 'web_scrape':
+                        # New modular WebScraper returns session data with articles and metadata
+                        if result and isinstance(result, dict):
+                            # Extract articles from the session data
                             scraped_articles = result.get('articles', [])
-                            
-                            if self.persist and self.file_manager:
-                                # Filter articles by date before saving
-                                filtered_articles = self._filter_articles_by_date(scraped_articles)
-                                
-                                # Save individual articles using FileManager with URL-based filenames
-                                for i, article in enumerate(filtered_articles):
-                                    article_url = article.get('url', '')
-                                    if article_url:
-                                        # Use URL-based filename
-                                        self.file_manager.save_article_by_url(
-                                            url=article_url,
-                                            article_data=article,
-                                            counter=i,
-                                            include_html_content=False
-                                        )
-                                    else:
-                                        # Fallback to old method if no URL
-                                        article_id = article.get('id') or f"article_{i}_{self.session_id}"
-                                        self.file_manager.save_article(article_id, article, include_html_content=False)
-                                  # Save session metadata with filtered articles
-                                session_file = os.path.join(self.file_manager.base_data_dir, "session_data.json")
-                                # Create a new result with filtered articles
-                                filtered_result = result.copy()
-                                filtered_result['articles'] = filtered_articles
-                                session_payload = {
-                                    'saved_at': datetime.now().isoformat(),
-                                    'articles_count': len(filtered_articles),
-                                    **filtered_result
-                                }
-                                self.file_manager.save_json_data(session_file, session_payload, data_type="session")
-                                
-                                # Use filtered articles for final result
-                                scraped_articles = filtered_articles
-                            else:
-                                # Filter articles by date for memory mode too
-                                filtered_articles = self._filter_articles_by_date(scraped_articles)
-                                
-                                # Store articles in memory for non-persistent mode
-                                self.memory_articles.extend(filtered_articles)
-                                
-                                # Use filtered articles for final result
-                                scraped_articles = filtered_articles
+                            # Filter articles by date
+                            filtered_articles = self._filter_articles_by_date(scraped_articles)
                             
                             # Add articles to our result list
-                            articles.extend(scraped_articles)
+                            articles.extend(filtered_articles)
                         
                         logger.info("Session [%s]: Web scraping complete. Found %d scraped articles.", session_id, len(articles))
         else:
             logger.info("Session [%s]: No tasks to execute (no URLs provided).", session_id)
-
-        # Prepare final result
-        result = {
-            'articles': articles,
+        
+        # Create session metadata
+        session_metadata = {
             'session_id': session_id,
-            'extraction_summary': {
-                'session_id': session_id,
-                'urls_requested': len(urls),
-                'urls_processed': len(scrape_urls_for_session),
-                'articles_extracted': len(articles),
-                'extraction_time_seconds': round(time.time() - start_time, 2),
-                'keywords_used': keywords or []
-            }
-        }
+            'urls_requested': len(urls),
+            'urls_processed': len(scrape_urls_for_session),
+            'articles_extracted': len(articles),
+            'extraction_time_seconds': round(time.time() - start_time, 2),
+            'keywords_used': keywords or [],
+            'scrape_depth': self.scrape_depth,
+            'persist_mode': self.persist,
+            'extraction_timestamp': datetime.now().isoformat()
+        }        # Process articles using new source-specific approach
+        source_session_data_list = self.process_articles(articles, urls, session_metadata)
         
-        logger.info("Session [%s]: Extraction completed in %.2f seconds", session_id, time.time() - start_time)
-        
-        return result
+        # Return only source-specific session data (no backward compatibility)
+        return source_session_data_list

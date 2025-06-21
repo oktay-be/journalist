@@ -6,7 +6,7 @@ import os
 import json
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, List
 from werkzeug.utils import secure_filename
 import datefinder
 
@@ -124,13 +124,9 @@ class FileManager:
                 # Create a copy to avoid modifying the original
                 article_data = article_data.copy()
                 article_data.pop('html_content', None)
-            
-            # Add metadata (timestamp is now part of the main data)
+              # Add metadata (timestamp is now part of the main data)
             # The article_data itself should contain 'scraped_at' as per web_scraper.py
-            # We can add an 'article_id_meta' for consistency if desired.
             article_payload = {
-                'article_id_meta': article_id, # Storing the id used for filename
-                'file_saved_at': datetime.now().isoformat(),
                 **article_data # Spread the original article data
             }
             return self.save_json_data(article_file, article_payload, data_type="article")
@@ -343,12 +339,9 @@ class FileManager:
                 # Create a copy to avoid modifying the original
                 article_data = article_data.copy()
                 article_data.pop('html_content', None)
-            
-            # Add metadata
+              # Add metadata
             article_payload = {
                 'url': url,
-                'filename_generated_from': url,
-                'file_saved_at': datetime.now().isoformat(),
                 **article_data # Spread the original article data
             }
             
@@ -424,3 +417,138 @@ class FileManager:
             logger.warning(f"Error checking article age for {url}: {e}")
             # On error, don't filter the article
             return False
+
+    def _get_source_session_filename(self, domain: str) -> str:
+        """
+        Generate session filename for specific domain, reusing existing sanitization.
+        
+        Args:
+            domain: Domain name like 'www.fanatik.com.tr'
+            
+        Returns:
+            Filename like 'session_data_fanatik_com_tr.json'
+        """
+        # Remove www prefix and replace dots/dashes with underscores
+        sanitized_domain = domain.replace('www.', '').replace('.', '_').replace('-', '_').replace(':', '_')
+        # Use existing sanitization method
+        safe_domain = self._sanitize_filename(sanitized_domain)
+        return f"session_data_{safe_domain}.json"
+
+    def save_source_specific_session_data(self, domain: str, session_data: Dict[str, Any]) -> bool:
+        """
+        Save session data for specific source domain.
+        
+        Args:
+            domain: Source domain name
+            session_data: Session data dictionary to save
+            
+        Returns:
+            True if saved successfully, False otherwise
+        """
+        try:
+            filename = self._get_source_session_filename(domain)
+            file_path = os.path.join(self.base_data_dir, filename)
+            
+            # Add domain metadata if not already present
+            if 'source_domain' not in session_data:
+                session_data['source_domain'] = domain
+            
+            # Add timestamp if not already present
+            if 'saved_at' not in session_data:
+                session_data['saved_at'] = datetime.now().isoformat()
+            
+            return self.save_json_data(file_path, session_data, data_type=f"source session ({domain})")
+            
+        except Exception as e:
+            logger.error(f"Failed to save source-specific session data for domain {domain}: {e}")
+            return False
+
+    def load_source_specific_session_data(self, domain: str) -> Optional[Dict[str, Any]]:
+        """
+        Load session data for specific source domain.
+        
+        Args:
+            domain: Source domain name
+            
+        Returns:
+            Session data dictionary or None if not found
+        """
+        try:
+            filename = self._get_source_session_filename(domain)
+            file_path = os.path.join(self.base_data_dir, filename)
+            return self.load_json_data(file_path, data_type=f"source session ({domain})")
+            
+        except Exception as e:
+            logger.error(f"Failed to load source-specific session data for domain {domain}: {e}")
+            return None
+
+    def list_source_session_files(self) -> List[str]:
+        """
+        List all source-specific session data files in the session directory.
+        
+        Returns:
+            List of source session filenames (not full paths)
+        """
+        try:
+            if not os.path.exists(self.base_data_dir):
+                return []
+            
+            files = []
+            for filename in os.listdir(self.base_data_dir):
+                if filename.startswith('session_data_') and filename.endswith('.json') and filename != 'session_data.json':
+                    files.append(filename)
+            
+            return sorted(files)  # Sort for consistent ordering
+            
+        except Exception as e:
+            logger.error(f"Error listing source session files: {e}")
+            return []
+
+    def save_individual_articles(self, articles: List[Dict[str, Any]]) -> None:
+        """
+        Save individual articles to files.
+        
+        Args:
+            articles: List of article dictionaries to save
+        """
+        try:
+            for i, article in enumerate(articles):
+                article_url = article.get('url', '')
+                if article_url:
+                    # Use URL-based filename
+                    self.save_article_by_url(
+                        url=article_url,
+                        article_data=article,
+                        counter=i,
+                        include_html_content=False
+                    )
+                else:
+                    # Fallback to old method if no URL
+                    article_id = article.get('id') or f"article_{i}"
+                    self.save_article(article_id, article, include_html_content=False)
+        except Exception as e:
+            logger.error(f"Error saving individual articles: {e}")
+
+    def save_source_session_files(self, source_session_data_list: List[Dict[str, Any]]) -> List[str]:
+        """
+        Save source-specific session data files.
+        
+        Args:
+            source_session_data_list: List of source session data to save
+            
+        Returns:
+            List of saved filenames
+        """
+        saved_files = []
+        try:
+            for source_data in source_session_data_list:
+                domain = source_data.get('source_domain', 'unknown')
+                success = self.save_source_specific_session_data(domain, source_data)
+                if success:
+                    filename = self._get_source_session_filename(domain)
+                    saved_files.append(filename)
+                    
+            return saved_files
+        except Exception as e:
+            logger.error(f"Error saving source session files: {e}")
+            return saved_files
