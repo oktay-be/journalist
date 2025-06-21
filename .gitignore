@@ -68,7 +68,6 @@ Thumbs.db
 *.json
 *cache/
 *workspace/
-*archive/
 example_project
 tmp*
 
