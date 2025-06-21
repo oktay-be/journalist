@@ -166,17 +166,11 @@ for i, (task_type, _) in enumerate(tasks):
                 session_metadata=session_metadata
             )
             
-            # Extract all articles for backward compatibility in final result
-            all_articles = []
-            for source_data in source_session_data_list:
-                all_articles.extend(source_data.get('articles', []))
-            
-            articles.extend(all_articles)
+            articles.extend(source_session_data_list)
 
-# Prepare final result with new source information
+# Prepare final result with source-specific data
 result = {
-    'articles': articles,  # All articles (backward compatibility)
-    'source_session_data': source_session_data_list,  # New source-specific data
+    'source_session_data': source_session_data_list,
     'session_id': session_id,
     'extraction_summary': {
         # ... existing fields
@@ -282,8 +276,8 @@ session_folder/
 2. Articles properly grouped by source domain
 3. Same data structure returned for both persistence modes
 4. Individual article files still saved correctly
-5. Final result includes both unified articles and source-specific data
+5. Final result includes source-specific data structure
 
 ---
 
-*This refactoring maintains full backward compatibility while adding source-specific functionality and improving code organization.*
+*This refactoring implements source-specific functionality with improved code organization.*
