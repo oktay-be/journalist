@@ -40,18 +40,26 @@ async def main():
         print("⏳ Starting content extraction...")
         result = await journalist.read(
             urls=urls,
-            keywords=keywords
-        )
+            keywords=keywords        )
         
         print("✅ Content extraction completed!")
         print("=" * 60)
         
-        # Display extracted articles
-        articles = result.get('articles', [])
-        print(f"📄 Found {len(articles)} articles:")
+        # Extract articles from source-specific session data
+        all_articles = []
+        if isinstance(result, list):
+            # New format: list of source-specific session data
+            for source_data in result:
+                source_articles = source_data.get('articles', [])
+                all_articles.extend(source_articles)
+        else:
+            # Fallback for old format (shouldn't happen with new code)
+            all_articles = result.get('articles', [])
+        
+        print(f"📄 Found {len(all_articles)} articles:")
         print("-" * 60)
         
-        for i, article in enumerate(articles, 1):
+        for i, article in enumerate(all_articles, 1):
             print(f"\n🏆 Article {i}:")
             print(f"   Title: {article.get('title', 'N/A')}")
             print(f"   URL: {article.get('url', 'N/A')}")
@@ -60,26 +68,20 @@ async def main():
             if article.get('matched_keywords'):
                 print(f"   Matched Keywords: {article.get('matched_keywords')}")
             print("-" * 40)
-          # Display extraction summary
-        summary = result.get('extraction_summary', {})
+        
+        # Display extraction summary
+        total_articles = len(all_articles)
+        total_sources = len(result) if isinstance(result, list) else 0
         print(f"\n📊 Extraction Summary:")
-        print(f"   URLs Processed: {summary.get('urls_processed', 0)}")
-        print(f"   Articles Extracted: {summary.get('articles_extracted', 0)}")
-        print(f"   Sources Processed: {summary.get('sources_processed', 0)}")
-        print(f"   Extraction Time: {summary.get('extraction_time_seconds', 0):.2f} seconds")
+        print(f"   URLs Processed: {len(urls)}")
+        print(f"   Articles Extracted: {total_articles}")
+        print(f"   Sources Processed: {total_sources}")
         
-        # Display source-specific information if available
-        source_session_files = result.get('source_session_files', [])
-        if source_session_files:
-            print(f"\n📂 Source Session Files:")
-            for filename in source_session_files:
-                print(f"   - {filename}")
-        
-        source_session_data = result.get('source_session_data', [])
-        if source_session_data:
+        # Display source-specific information
+        if isinstance(result, list) and result:
             print(f"\n🌐 Source-Specific Results:")
             print("-" * 60)
-            for i, source_data in enumerate(source_session_data, 1):
+            for i, source_data in enumerate(result, 1):
                 domain = source_data.get('source_domain', 'Unknown')
                 source_url = source_data.get('source_url', 'N/A')
                 source_articles = source_data.get('articles', [])
@@ -97,9 +99,16 @@ async def main():
                 if len(source_articles) > 3:
                     print(f"   ... and {len(source_articles) - 3} more articles")
                 print("-" * 40)
-        
-        # Display any errors if occurred
-        errors = result.get('errors', [])
+          # Check for any errors in source data (if the format supports it)
+        errors = []
+        if isinstance(result, list):
+            for source_data in result:
+                source_errors = source_data.get('errors', [])
+                errors.extend(source_errors)
+        else:
+            # Fallback for old format
+            errors = result.get('errors', [])
+            
         if errors:
             print(f"\n⚠️  Errors encountered:")
             for error in errors:

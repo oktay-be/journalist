@@ -34,20 +34,27 @@ async def test_refactored_journalist():
         result_persist = await journalist_persist.read(test_urls, test_keywords)
         
         print(f"✅ Result type: {type(result_persist)}")
-        print(f"✅ Result is dict: {isinstance(result_persist, dict)}")
+        print(f"✅ Result is list: {isinstance(result_persist, list)}")
         
-        if isinstance(result_persist, dict):
-            print(f"✅ Result keys: {list(result_persist.keys())}")
-            print(f"✅ Articles count: {len(result_persist.get('articles', []))}")
-            print(f"✅ Has extraction_summary: {'extraction_summary' in result_persist}")
-            print(f"✅ Has source_sessions: {'source_sessions' in result_persist}")
+        if isinstance(result_persist, list):
+            print(f"✅ Source sessions count: {len(result_persist)}")
             
-            # Check source sessions
-            source_sessions = result_persist.get('source_sessions', [])
-            print(f"✅ Source sessions count: {len(source_sessions)}")
+            # Extract all articles from all sources
+            all_articles = []
+            for source_data in result_persist:
+                source_articles = source_data.get('articles', [])
+                all_articles.extend(source_articles)
             
-            for i, session in enumerate(source_sessions):
-                print(f"  📊 Session {i+1}: domain={session.get('source_domain')}, articles={session.get('articles_count', 0)}")
+            print(f"✅ Total articles count: {len(all_articles)}")
+            
+            # Check each source session
+            for i, source_data in enumerate(result_persist):
+                domain = source_data.get('source_domain', 'unknown')
+                articles_count = source_data.get('articles_count', 0)
+                source_url = source_data.get('source_url', 'N/A')
+                print(f"  📊 Source {i+1}: domain={domain}, articles={articles_count}, url={source_url}")
+        else:
+            print(f"❌ Expected list but got {type(result_persist)}")
         
         # Check if files were created
         if os.path.exists(journalist_persist.session_path):
@@ -68,12 +75,20 @@ async def test_refactored_journalist():
         result_memory = await journalist_memory.read(test_urls, test_keywords)
         
         print(f"✅ Result type: {type(result_memory)}")
-        print(f"✅ Result is dict: {isinstance(result_memory, dict)}")
+        print(f"✅ Result is list: {isinstance(result_memory, list)}")
         
-        if isinstance(result_memory, dict):
-            print(f"✅ Result keys: {list(result_memory.keys())}")
-            print(f"✅ Articles count: {len(result_memory.get('articles', []))}")
-            print(f"✅ Has source_sessions: {'source_sessions' in result_memory}")
+        if isinstance(result_memory, list):
+            print(f"✅ Source sessions count: {len(result_memory)}")
+            
+            # Extract all articles from all sources
+            all_articles = []
+            for source_data in result_memory:
+                source_articles = source_data.get('articles', [])
+                all_articles.extend(source_articles)
+            
+            print(f"✅ Total articles count: {len(all_articles)}")
+        else:
+            print(f"❌ Expected list but got {type(result_memory)}")
         
         print(f"📋 Memory articles: {len(journalist_memory.memory_articles)}")
         

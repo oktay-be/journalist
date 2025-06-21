@@ -27,14 +27,34 @@ async def simple_test():
         print("✅ Read method completed")
         
         print(f"📊 Result type: {type(result)}")
-        print(f"📊 Result structure: {list(result.keys()) if isinstance(result, dict) else 'Not a dict'}")
+        print(f"📊 Result structure: {f'List with {len(result)} sources' if isinstance(result, list) else 'Not a list'}")
         
-        if isinstance(result, dict):
-            articles = result.get('articles', [])
-            print(f"📊 Articles found: {len(articles)}")
+        if isinstance(result, list):
+            # Extract all articles from all sources
+            all_articles = []
+            print(f"📊 Source sessions: {len(result)}")
             
-            summary = result.get('extraction_summary', {})
-            print(f"📊 Extraction summary: {summary}")
+            for i, source_data in enumerate(result):
+                domain = source_data.get('source_domain', 'unknown')
+                articles_count = source_data.get('articles_count', 0)
+                source_url = source_data.get('source_url', 'N/A')
+                source_articles = source_data.get('articles', [])
+                all_articles.extend(source_articles)
+                
+                print(f"  📍 Source {i+1}: {domain} ({articles_count} articles)")
+                print(f"      URL: {source_url}")
+            
+            print(f"📊 Total articles found: {len(all_articles)}")
+        else:
+            # Fallback for old format (shouldn't happen)
+            if isinstance(result, dict):
+                articles = result.get('articles', [])
+                print(f"📊 Articles found: {len(articles)}")
+                
+                summary = result.get('extraction_summary', {})
+                print(f"📊 Extraction summary: {summary}")
+            else:
+                print(f"❌ Unexpected result type: {type(result)}")
         
     except Exception as e:
         print(f"❌ Error: {e}")
