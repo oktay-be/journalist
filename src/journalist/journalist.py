@@ -144,7 +144,7 @@ class Journalist:
 
     def _group_articles_by_source(self, articles: List[Dict[str, Any]], original_urls: List[str]) -> Dict[str, Dict[str, Any]]:
         """
-        Group articles by their source domain, reusing existing get_domain utility.
+        Group articles by their source domain, ensuring each original URL has an entry.
         
         Args:
             articles: List of article dictionaries
@@ -159,12 +159,27 @@ class Journalist:
             
             grouped_sources = {}
             
+            # Initialize all domains from original URLs first
+            for orig_url in original_urls:
+                domain = get_domain(orig_url)
+                if not domain:
+                    domain = f'unknown_{len(grouped_sources)}'
+                
+                if domain not in grouped_sources:
+                    grouped_sources[domain] = {
+                        'source_domain': domain,
+                        'source_url': orig_url,
+                        'articles': [],
+                        'articles_count': 0
+                    }
+            
+            # Now group articles into existing domains
             for article in articles:
                 # Get article URL
                 article_url = article.get('url', '')
                 
                 if not article_url:
-                    # If no URL, try to find a matching domain from original URLs
+                    # If no URL, assign to first available domain
                     if original_urls:
                         domain = get_domain(original_urls[0])
                     else:
@@ -175,18 +190,12 @@ class Journalist:
                 if not domain:
                     domain = 'unknown'
                 
-                # Initialize domain group if not exists
+                # Find matching domain or create unknown entry
                 if domain not in grouped_sources:
-                    # Find the original URL for this domain
-                    source_url = domain
-                    for orig_url in original_urls:
-                        if get_domain(orig_url) == domain:
-                            source_url = orig_url
-                            break
-                    
+                    # This handles cases where articles come from domains not in original URLs
                     grouped_sources[domain] = {
                         'source_domain': domain,
-                        'source_url': source_url,
+                        'source_url': article_url if article_url else domain,
                         'articles': [],
                         'articles_count': 0
                     }
@@ -194,8 +203,7 @@ class Journalist:
                 # Add article to appropriate domain group
                 grouped_sources[domain]['articles'].append(article)
                 grouped_sources[domain]['articles_count'] += 1
-            
-            # Log grouping results
+              # Log grouping results
             for domain, source_data in grouped_sources.items():
                 logger.info(f"Grouped {source_data['articles_count']} articles for domain: {domain}")
             
@@ -203,15 +211,17 @@ class Journalist:
             
         except Exception as e:
             logger.error(f"Error grouping articles by source: {e}")
-            # Fallback: put all articles under 'unknown' domain
-            return {
-                'unknown': {
-                    'source_domain': 'unknown',
-                    'source_url': 'unknown',
+            # Fallback: ensure we have at least one entry per original URL
+            fallback_sources = {}
+            for i, orig_url in enumerate(original_urls):
+                domain = f'unknown_{i}'
+                fallback_sources[domain] = {
+                    'source_domain': domain,
+                    'source_url': orig_url,
                     'articles': articles,
                     'articles_count': len(articles)
                 }
-            }
+            return fallback_sources
 
     def process_articles(
         self, 
@@ -359,26 +369,8 @@ class Journalist:
             'scrape_depth': self.scrape_depth,
             'persist_mode': self.persist,
             'extraction_timestamp': datetime.now().isoformat()
-        }
-
-        # Process articles using new source-specific approach
+        }        # Process articles using new source-specific approach
         source_session_data_list = self.process_articles(articles, urls, session_metadata)
         
-        # Maintain backward compatibility by returning original format
-        result = {
-            'articles': articles,
-            'session_id': session_id,
-            'extraction_summary': {
-                'session_id': session_id,
-                'urls_requested': len(urls),
-                'urls_processed': len(scrape_urls_for_session),
-                'articles_extracted': len(articles),
-                'extraction_time_seconds': round(time.time() - start_time, 2),
-                'keywords_used': keywords or []
-            },
-            'source_sessions': source_session_data_list  # Add new source-specific data
-        }
-        
-        logger.info("Session [%s]: Extraction completed in %.2f seconds", session_id, time.time() - start_time)
-        
-        return result
+        # Return only source-specific session data (no backward compatibility)
+        return source_session_data_list

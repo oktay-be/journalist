@@ -20,14 +20,16 @@ async def main():
     print("=" * 60)
     
     # Create journalist instance with persistence and depth 1
-    journalist = Journalist(persist=True, scrape_depth=1)
+    journalist = Journalist(persist=False, scrape_depth=1)
     
     # Define test parameters
     urls = [
-        "https://www.fanatik.com.tr"
+        "https://www.fanatik.com.tr",
+        "https://www.ntvspor.net"
+
     ]
     
-    keywords = ["fenerbahce", "mourinho", "aziz", "ali"]
+    keywords = ["fenerbahce"]
     
     print(f"📰 Target URLs: {urls}")
     print(f"🔍 Keywords: {keywords}")
