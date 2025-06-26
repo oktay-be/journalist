@@ -31,12 +31,11 @@ class FullPageExtractor(BaseExtractor):
 
         extracted_title = ""
         extracted_body = ""
-        
-        # Remove unwanted elements for better content extraction
+          # Remove unwanted elements for better content extraction
         clean_unwanted_elements(soup)
         
-        # For FullPage extractor, use the raw HTML content as body
-        extracted_body = html_content
+        # For FullPage extractor, extract clean text content instead of raw HTML
+        extracted_body = self._extract_intelligent_content(soup)
         
         # Extract title with fallbacks
         extracted_title = self._extract_title_with_fallbacks(soup)
