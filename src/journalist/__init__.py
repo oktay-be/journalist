@@ -4,9 +4,9 @@ journalist - Universal News Content Extraction Library
 A powerful and flexible library for extracting content from news websites worldwide.
 """
 
-__version__ = "0.2.0"
-__author__ = "Your Name"
-__email__ = "your.email@example.com"
+__version__ = "0.3.0"
+__author__ = "Oktay Burak Ertaş"
+__email__ = "oktay.burak.ertas@gmail.com"
 
 # Public API exports
 from .journalist import Journalist
