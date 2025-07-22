@@ -73,23 +73,23 @@ class SessionManager:
                 async with session.get(url) as response:
                     response.raise_for_status()  # Raises HTTPError for bad responses (4xx or 5xx)
                     content = await response.text()
-                    logger.info(f"Successfully fetched content from {url} (status: {response.status}).")
+                    logger.debug(f"Successfully fetched content from {url} (status: {response.status}).")
                     return content
             except aiohttp.ClientResponseError as e:  # More specific error for HTTP errors
-                logger.warning(f"HTTP error fetching {url} (attempt {attempt + 1}/{retries + 1}): {e.status} {e.message}")
+                logger.debug(f"HTTP error fetching {url} (attempt {attempt + 1}/{retries + 1}): {e.status} {e.message}")
                 last_exception = e
                 if e.status in [400, 401, 403, 404]:  # Don't retry on these client errors
                     logger.error(f"Client error {e.status} for {url}. Not retrying.")
                     break
             except aiohttp.ClientError as e:  # Catches other client errors like connection issues
-                logger.warning(f"Client error fetching {url} (attempt {attempt + 1}/{retries + 1}): {e}")
+                logger.debug(f"Client error fetching {url} (attempt {attempt + 1}/{retries + 1}): {e}")
                 last_exception = e
             except asyncio.TimeoutError as e:  # Catch timeout errors specifically
-                logger.warning(f"Timeout error fetching {url} (attempt {attempt + 1}/{retries + 1}): {e}")
+                logger.debug(f"Timeout error fetching {url} (attempt {attempt + 1}/{retries + 1}): {e}")
                 last_exception = e
 
             if attempt < retries:
-                logger.info(f"Retrying in {retry_delay}s...")
+                logger.debug(f"Retrying in {retry_delay}s...")
                 await asyncio.sleep(retry_delay)
             else:
                 logger.error(f"Failed to fetch {url} after {retries + 1} attempts. Last error: {last_exception}")

@@ -21,14 +21,13 @@ class LinkDiscoverer:
     def __init__(self, max_concurrent_tasks: int = 5, config: Optional[ScrapingConfig] = None):
         """
         Initialize the link discoverer.
-        
-        Args:
+          Args:
             max_concurrent_tasks: Maximum concurrent discovery tasks.
             config: Scraping configuration instance.
         """
         self.max_concurrent_tasks = max_concurrent_tasks # Placeholder for now
         self.config = config or ScrapingConfig()
-        logger.info(f"LinkDiscoverer initialized. Max concurrent tasks (placeholder): {max_concurrent_tasks}")
+        logger.debug(f"LinkDiscoverer initialized. Max concurrent tasks (placeholder): {max_concurrent_tasks}")
 
     async def discover_links(
         self, 
@@ -47,21 +46,20 @@ class LinkDiscoverer:
             session: Active aiohttp.ClientSession for making HTTP requests.
             search_depth: How many levels deep to discover links. 0 means only the initial page.
             visited_urls: A set of already visited URLs to prevent re-fetching and loops.
-            
-        Returns:
+              Returns:
             A list of unique, relevant link information dictionaries.
             Each dictionary contains: {'url': str, 'title_anchor': str, 'source_page_url': str}
         """
         if visited_urls is None:
             visited_urls = set()
-
+            
         if site_url in visited_urls or search_depth < 0:
             return []
-
+            
         visited_urls.add(site_url)
         discovered_links_map: Dict[str, Dict[str, str]] = {} # Use a map to store unique links by URL
         
-        logger.info(f"Discovering links from {site_url} (depth: {search_depth}, keywords: {keywords})")
+        logger.debug(f"Discovering links from {site_url} (depth: {search_depth}, keywords: {keywords})")
 
         try:
             html_content = await self._fetch_html(site_url, session)
@@ -113,9 +111,9 @@ class LinkDiscoverer:
                             "source_page_url": site_url
                         }
                         discovered_links_map[absolute_url] = link_info
-                        links_on_this_page.append(absolute_url)
-            
-            logger.info(f"Found {len(discovered_links_map)} relevant links on page {site_url}.")            # Recursive discovery if depth allows
+                        links_on_this_page.append(absolute_url)            
+            logger.debug(f"Found {len(discovered_links_map)} relevant links on page {site_url}.")
+              # Recursive discovery if depth allows
             if search_depth > 0:
                 for link_url in links_on_this_page: # Iterate over links found on *this* page
                     if link_url not in visited_urls: # Check before recursive call
@@ -131,7 +129,7 @@ class LinkDiscoverer:
             logger.error(f"Error discovering links from {site_url}: {e}", exc_info=True)
         
         final_links = list(discovered_links_map.values())
-        logger.info(f"Total {len(final_links)} unique links discovered starting from {site_url} after depth {search_depth}.")
+        logger.debug(f"Total {len(final_links)} unique links discovered starting from {site_url} after depth {search_depth}.")
         return final_links
     
     def _matches_keywords(self, url: str, anchor_text: str, keywords: List[str]) -> bool:

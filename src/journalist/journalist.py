@@ -91,7 +91,7 @@ class Journalist:
                         for date in url_dates:
                             if isinstance(date, datetime) and date < cutoff_date:
                                 is_url_old = True
-                                logger.info(f"Filtering out old URL (date: {date.strftime('%Y-%m-%d')}): {article_url}")
+                                logger.debug(f"Filtering out old URL (date: {date.strftime('%Y-%m-%d')}): {article_url}")
                                 break
                     except ImportError:
                         logger.warning("datefinder not available, skipping URL date filtering")
@@ -121,7 +121,7 @@ class Journalist:
                                 pub_date_naive = pub_date
                             
                             if pub_date_naive < cutoff_date:
-                                logger.info(f"Filtering out old article (published: {pub_date.strftime('%Y-%m-%d')}): {article_url}")
+                                logger.debug(f"Filtering out old article (published: {pub_date.strftime('%Y-%m-%d')}): {article_url}")
                                 continue
                             
                     except Exception as e:
@@ -280,8 +280,7 @@ class Journalist:
             log_level: Optional logging level ('DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL')
             
         Returns:
-            Dictionary containing extracted articles and metadata        """
-        # Store original log level and set new one if provided
+            Dictionary containing extracted articles and metadata        """        # Store original log level and set new one if provided
         original_log_level = None
         if log_level:
             original_log_level = logger.level
@@ -289,12 +288,18 @@ class Journalist:
                 # Convert string to logging level constant
                 numeric_level = getattr(logging, log_level.upper())
                 logger.setLevel(numeric_level)
-                # Also set level for all related loggers
-                logging.getLogger('journalist.core').setLevel(numeric_level)
-                logging.getLogger('journalist.extractors').setLevel(numeric_level)
+                # Also set level for all related loggers using correct module paths
+                logging.getLogger('src.journalist.core').setLevel(numeric_level)
+                logging.getLogger('src.journalist.extractors').setLevel(numeric_level)
+                # Set for all child loggers too
+                logging.getLogger('src.journalist.core.session_manager').setLevel(numeric_level)
+                logging.getLogger('src.journalist.core.web_scraper').setLevel(numeric_level)
+                logging.getLogger('src.journalist.core.link_discoverer').setLevel(numeric_level)
+                logging.getLogger('src.journalist.core.content_extractor').setLevel(numeric_level)
                 logger.info(f"Log level set to {log_level.upper()} for this session")
             except AttributeError:
-                logger.warning(f"Invalid log level '{log_level}', using default level")        
+                logger.warning(f"Invalid log level '{log_level}', using default level")
+        
         try:
             if not urls:
                 # Return empty result for empty URL list instead of raising error
@@ -309,90 +314,97 @@ class Journalist:
                         'persist_mode': self.persist
                     }
                 }
-            
-            # Use instance session_id and prepare parameters
+              # Use instance session_id and prepare parameters
             session_id = self.session_id
             keywords_for_session = keywords or []
             scrape_urls_for_session = urls
-          # Important logging block from original
-        start_time = time.time()
-        logger.info("Session [%s]: Starting content extraction for %d URLs", session_id, len(urls))
-        logger.info("Session [%s]: URLs: %s", session_id, scrape_urls_for_session)
-        
-        if keywords:
-            logger.info("Session [%s]: Using keywords for filtering: %s", session_id, keywords)
-        
-        # Create tasks for parallel execution
-        tasks = []
-
-        # Task 1: Web scraping (if URLs provided)
-        if scrape_urls_for_session:
-            logger.info("Session [%s]: Creating web scraping task for URLs: %s", session_id, scrape_urls_for_session)
-            # Use the web scraper as an async context manager to ensure proper session cleanup
-            async def web_scrape_with_context():
-                async with self.web_scraper:                    return await self.web_scraper.execute_scraping_for_session(
-                        session_id=session_id,
-                        keywords=keywords_for_session,
-                        sites=scrape_urls_for_session,
-                        scrape_depth=self.scrape_depth
-                    )
             
-            web_scrape_task = asyncio.create_task(web_scrape_with_context())
-            tasks.append(('web_scrape', web_scrape_task))
-        else:
-            logger.info("Session [%s]: No URLs provided for scraping.", session_id)
-
-        # Initialize return values
-        articles = []
-          # Execute tasks in parallel if any exist
-        if tasks:
-            logger.info("Session [%s]: Executing %d tasks in parallel: %s", session_id, len(tasks), [task[0] for task in tasks])
+            # Important logging block from original
+            start_time = time.time()
+            logger.info("Session [%s]: Starting content extraction for %d URLs", session_id, len(urls))
+            logger.info("Session [%s]: URLs: %s", session_id, scrape_urls_for_session)
             
-            # Extract just the task objects for gather
-            task_objects = [task[1] for task in tasks]
-            results = await asyncio.gather(*task_objects, return_exceptions=True)
-              # Process results based on task type
-            for i, (task_type, _) in enumerate(tasks):
-                result = results[i]
+            if keywords:
+                logger.info("Session [%s]: Using keywords for filtering: %s", session_id, keywords)            
+            # Create tasks for parallel execution
+            tasks = []
+
+            # Task 1: Web scraping (if URLs provided)
+            if scrape_urls_for_session:
+                logger.info("Session [%s]: Creating web scraping task for URLs: %s", session_id, scrape_urls_for_session)
+                # Use the web scraper as an async context manager to ensure proper session cleanup
+                async def web_scrape_with_context():
+                    async with self.web_scraper:
+                        return await self.web_scraper.execute_scraping_for_session(
+                            session_id=session_id,
+                            keywords=keywords_for_session,
+                            sites=scrape_urls_for_session,
+                            scrape_depth=self.scrape_depth
+                        )
                 
-                if isinstance(result, Exception):
-                    logger.error("Session [%s]: Error in %s task: %s", session_id, task_type, result, exc_info=True)
-                else:
-                    if task_type == 'web_scrape':
-                        # New modular WebScraper returns session data with articles and metadata
-                        if result and isinstance(result, dict):
-                            # Extract articles from the session data
-                            scraped_articles = result.get('articles', [])
-                            # Filter articles by date
-                            filtered_articles = self._filter_articles_by_date(scraped_articles)
+                web_scrape_task = asyncio.create_task(web_scrape_with_context())
+                tasks.append(('web_scrape', web_scrape_task))
+            else:
+                logger.info("Session [%s]: No URLs provided for scraping.", session_id)# Initialize return values
+            articles = []
+            
+            # Execute tasks in parallel if any exist
+            if tasks:
+                logger.info("Session [%s]: Executing %d tasks in parallel: %s", session_id, len(tasks), [task[0] for task in tasks])
+                
+                # Extract just the task objects for gather
+                task_objects = [task[1] for task in tasks]
+                results = await asyncio.gather(*task_objects, return_exceptions=True)
+                
+                # Process results based on task type
+                for i, (task_type, _) in enumerate(tasks):
+                    result = results[i]
+                    
+                    if isinstance(result, Exception):
+                        logger.error("Session [%s]: Error in %s task: %s", session_id, task_type, result, exc_info=True)
+                    else:
+                        if task_type == 'web_scrape':
+                            # New modular WebScraper returns session data with articles and metadata
+                            if result and isinstance(result, dict):
+                                # Extract articles from the session data
+                                scraped_articles = result.get('articles', [])
+                                # Filter articles by date
+                                filtered_articles = self._filter_articles_by_date(scraped_articles)
+                                
+                                # Add articles to our result list
+                                articles.extend(filtered_articles)
                             
-                            # Add articles to our result list
-                            articles.extend(filtered_articles)
-                        
-                        logger.info("Session [%s]: Web scraping complete. Found %d scraped articles.", session_id, len(articles))
-        else:
-            logger.info("Session [%s]: No tasks to execute (no URLs provided).", session_id)
-        
-        # Create session metadata
-        session_metadata = {
-            'session_id': session_id,
-            'urls_requested': len(urls),
-            'urls_processed': len(scrape_urls_for_session),
-            'articles_extracted': len(articles),
-            'extraction_time_seconds': round(time.time() - start_time, 2),
-            'keywords_used': keywords or [],
-            'scrape_depth': self.scrape_depth,
-            'persist_mode': self.persist,
-            'extraction_timestamp': datetime.now().isoformat()        }
-        
-        # Process articles using new source-specific approach
-        source_session_data_list = self.process_articles(articles, urls, session_metadata)        # Return only source-specific session data (no backward compatibility)
-        return source_session_data_list
-        
+                            logger.info("Session [%s]: Web scraping complete. Found %d scraped articles.", session_id, len(articles))
+            else:
+                logger.info("Session [%s]: No tasks to execute (no URLs provided).", session_id)
+            
+            # Create session metadata
+            session_metadata = {
+                'session_id': session_id,
+                'urls_requested': len(urls),
+                'urls_processed': len(scrape_urls_for_session),
+                'articles_extracted': len(articles),
+                'extraction_time_seconds': round(time.time() - start_time, 2),
+                'keywords_used': keywords or [],
+                'scrape_depth': self.scrape_depth,
+                'persist_mode': self.persist,
+                'extraction_timestamp': datetime.now().isoformat()
+            }
+            
+            # Process articles using new source-specific approach
+            source_session_data_list = self.process_articles(articles, urls, session_metadata)
+              # Return only source-specific session data (no backward compatibility)
+            return source_session_data_list
+            
         finally:
             # Restore original log level if it was changed
             if original_log_level is not None:
                 logger.setLevel(original_log_level)
-                logging.getLogger('journalist.core').setLevel(original_log_level)
-                logging.getLogger('journalist.extractors').setLevel(original_log_level)
+                logging.getLogger('src.journalist.core').setLevel(original_log_level)
+                logging.getLogger('src.journalist.extractors').setLevel(original_log_level)
+                # Restore for all child loggers too
+                logging.getLogger('src.journalist.core.session_manager').setLevel(original_log_level)
+                logging.getLogger('src.journalist.core.web_scraper').setLevel(original_log_level)
+                logging.getLogger('src.journalist.core.link_discoverer').setLevel(original_log_level)
+                logging.getLogger('src.journalist.core.content_extractor').setLevel(original_log_level)
                 logger.debug("Log level restored to original setting")

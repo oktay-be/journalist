@@ -63,7 +63,7 @@ class ContentExtractor:
                     result = await extractor.extract(html_content=html_content, url=url, soup=soup)
                     
                     if result and self._is_quality_content(result, url): # Pass URL for logging in quality check
-                        logger.info(f"Successfully extracted content using {extractor.__class__.__name__} for {url}")
+                        logger.debug(f"Successfully extracted content using {extractor.__class__.__name__} for {url}")
                         # Ensure 'extraction_method' is present, if not add it from class name
                         if 'extraction_method' not in result or not result['extraction_method']:
                             result['extraction_method'] = extractor.__class__.__name__

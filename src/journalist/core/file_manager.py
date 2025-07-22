@@ -68,7 +68,7 @@ class FileManager:
 
             with open(file_path, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
-            logger.info(f"Successfully saved {data_type} to {file_path}")
+            logger.debug(f"Successfully saved {data_type} to {file_path}")
             return True
         except IOError as e:
             logger.error(f"IOError saving {data_type} to {file_path}: {e}")

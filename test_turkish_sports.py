@@ -7,11 +7,22 @@ Testing with Fenerbahçe and Galatasaray keywords on Turkish sports sites
 import asyncio
 import sys
 import os
+import logging
 
 # Add the src directory to Python path for development
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 from journalist import Journalist
+
+# Single source of truth for log level
+LOG_LEVEL = "DEBUG"
+
+# Configure logging to see DEBUG messages
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL),
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%H:%M:%S'
+)
 
 
 async def main():
@@ -20,16 +31,14 @@ async def main():
     print("=" * 60)
     
     # Create journalist instance with persistence and depth 1
-    journalist = Journalist(persist=False, scrape_depth=1)
+    journalist = Journalist(persist=True, scrape_depth=1)
     
     # Define test parameters
     urls = [
         "https://www.fanatik.com.tr",
-        "https://www.ntvspor.net"
-
-    ]
+        "https://www.ntvspor.net"    ]
     
-    keywords = ["fenerbahce"]
+    keywords = ["fenerbahce", "mourinho", "galatasaray"]
     
     print(f"📰 Target URLs: {urls}")
     print(f"🔍 Keywords: {keywords}")
@@ -40,7 +49,9 @@ async def main():
         print("⏳ Starting content extraction...")
         result = await journalist.read(
             urls=urls,
-            keywords=keywords        )
+            keywords=keywords,
+            log_level=LOG_LEVEL
+        )
         
         print("✅ Content extraction completed!")
         print("=" * 60)
