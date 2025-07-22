@@ -263,42 +263,57 @@ class Journalist:
             else:
                 # Store in memory for non-persistent mode
                 self.memory_articles.extend(filtered_articles)
-            
-            # 5. Always return the same structure
+              # 5. Always return the same structure
             return source_session_data_list
             
         except Exception as e:
             logger.error(f"Error processing articles: {e}")
             return []
 
-    async def read(self, urls: List[str], keywords: Optional[List[str]] = None) -> Dict[str, Any]:
+    async def read(self, urls: List[str], keywords: Optional[List[str]] = None, log_level: Optional[str] = None) -> Dict[str, Any]:
         """
         Extract content from the provided URLs with optional keyword filtering.
         
         Args:
             urls: List of website URLs to process
             keywords: Optional list of keywords for relevance filtering
+            log_level: Optional logging level ('DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL')
             
         Returns:
             Dictionary containing extracted articles and metadata        """
-        if not urls:
-            # Return empty result for empty URL list instead of raising error
-            return {
-                'articles': [],
-                'session_metadata': {
-                    'session_id': self.session_id,
-                    'total_articles': 0,
-                    'total_links_processed': 0,
-                    'keywords_used': keywords or [],
-                    'scrape_depth': self.scrape_depth,
-                    'persist_mode': self.persist
+        # Store original log level and set new one if provided
+        original_log_level = None
+        if log_level:
+            original_log_level = logger.level
+            try:
+                # Convert string to logging level constant
+                numeric_level = getattr(logging, log_level.upper())
+                logger.setLevel(numeric_level)
+                # Also set level for all related loggers
+                logging.getLogger('journalist.core').setLevel(numeric_level)
+                logging.getLogger('journalist.extractors').setLevel(numeric_level)
+                logger.info(f"Log level set to {log_level.upper()} for this session")
+            except AttributeError:
+                logger.warning(f"Invalid log level '{log_level}', using default level")        
+        try:
+            if not urls:
+                # Return empty result for empty URL list instead of raising error
+                return {
+                    'articles': [],
+                    'session_metadata': {
+                        'session_id': self.session_id,
+                        'total_articles': 0,
+                        'total_links_processed': 0,
+                        'keywords_used': keywords or [],
+                        'scrape_depth': self.scrape_depth,
+                        'persist_mode': self.persist
+                    }
                 }
-            }
-        
-        # Use instance session_id and prepare parameters
-        session_id = self.session_id
-        keywords_for_session = keywords or []
-        scrape_urls_for_session = urls
+            
+            # Use instance session_id and prepare parameters
+            session_id = self.session_id
+            keywords_for_session = keywords or []
+            scrape_urls_for_session = urls
           # Important logging block from original
         start_time = time.time()
         logger.info("Session [%s]: Starting content extraction for %d URLs", session_id, len(urls))
@@ -368,9 +383,16 @@ class Journalist:
             'keywords_used': keywords or [],
             'scrape_depth': self.scrape_depth,
             'persist_mode': self.persist,
-            'extraction_timestamp': datetime.now().isoformat()
-        }        # Process articles using new source-specific approach
-        source_session_data_list = self.process_articles(articles, urls, session_metadata)
+            'extraction_timestamp': datetime.now().isoformat()        }
         
-        # Return only source-specific session data (no backward compatibility)
+        # Process articles using new source-specific approach
+        source_session_data_list = self.process_articles(articles, urls, session_metadata)        # Return only source-specific session data (no backward compatibility)
         return source_session_data_list
+        
+        finally:
+            # Restore original log level if it was changed
+            if original_log_level is not None:
+                logger.setLevel(original_log_level)
+                logging.getLogger('journalist.core').setLevel(original_log_level)
+                logging.getLogger('journalist.extractors').setLevel(original_log_level)
+                logger.debug("Log level restored to original setting")
