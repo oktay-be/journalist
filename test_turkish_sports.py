@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 from journalist import Journalist
 
 # Single source of truth for log level
-LOG_LEVEL = "DEBUG"
+LOG_LEVEL = "INFO"
 
 # Configure logging to see DEBUG messages
 logging.basicConfig(
