@@ -4,7 +4,7 @@ journalist - Universal News Content Extraction Library
 A powerful and flexible library for extracting content from news websites worldwide.
 """
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 __author__ = "Oktay Burak Ertaş"
 __email__ = "oktay.burak.ertas@gmail.com"
 

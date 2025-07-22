@@ -12,15 +12,13 @@ class JournalistConfig:
     
     # Environment detection
     IS_LOCAL = os.getenv('ENVIRONMENT', 'local') == 'local'
-    
-    # Default values - environment dependent
+      # Default values - environment dependent
     if IS_LOCAL:
         DEFAULT_BASE_WORKSPACE_PATH = ".journalist_workspace"
     else:
         DEFAULT_BASE_WORKSPACE_PATH = "/tmp/.journalist_workspace"
     
-    # Log the workspace path being used
-    logger.info(f"Using workspace path: {DEFAULT_BASE_WORKSPACE_PATH} (IS_LOCAL: {IS_LOCAL})")
+    _logged_once = False  # Class variable to ensure we only log once
     
     def __init__(self):
         """Initialize configuration with defaults."""
@@ -29,4 +27,8 @@ class JournalistConfig:
     @classmethod
     def get_base_workspace_path(cls) -> str:
         """Get base workspace path."""
+        # Log when the path is requested (first time only)
+        if not cls._logged_once:
+            logger.info(f"Workspace path: {cls.DEFAULT_BASE_WORKSPACE_PATH} (IS_LOCAL: {cls.IS_LOCAL})")
+            cls._logged_once = True
         return cls.DEFAULT_BASE_WORKSPACE_PATH

@@ -287,10 +287,10 @@ class Journalist:
             try:
                 # Convert string to logging level constant
                 numeric_level = getattr(logging, log_level.upper())
-                logger.setLevel(numeric_level)
-                # Also set level for all related loggers using correct module paths
+                logger.setLevel(numeric_level)                # Also set level for all related loggers using correct module paths
                 logging.getLogger('src.journalist.core').setLevel(numeric_level)
                 logging.getLogger('src.journalist.extractors').setLevel(numeric_level)
+                logging.getLogger('src.journalist.config').setLevel(numeric_level)
                 # Set for all child loggers too
                 logging.getLogger('src.journalist.core.session_manager').setLevel(numeric_level)
                 logging.getLogger('src.journalist.core.web_scraper').setLevel(numeric_level)
@@ -402,6 +402,7 @@ class Journalist:
                 logger.setLevel(original_log_level)
                 logging.getLogger('src.journalist.core').setLevel(original_log_level)
                 logging.getLogger('src.journalist.extractors').setLevel(original_log_level)
+                logging.getLogger('src.journalist.config').setLevel(original_log_level)
                 # Restore for all child loggers too
                 logging.getLogger('src.journalist.core.session_manager').setLevel(original_log_level)
                 logging.getLogger('src.journalist.core.web_scraper').setLevel(original_log_level)
