@@ -441,13 +441,14 @@ class FileManager:
         Args:
             domain: Source domain name
             session_data: Session data dictionary to save
-            
-        Returns:
+              Returns:
             True if saved successfully, False otherwise
         """
         try:
             filename = self._get_source_session_filename(domain)
             file_path = os.path.join(self.base_data_dir, filename)
+            
+            logger.info(f"Saving source session data to: {file_path}")
             
             # Add domain metadata if not already present
             if 'source_domain' not in session_data:
@@ -519,8 +520,7 @@ class FileManager:
                     self.save_article_by_url(
                         url=article_url,
                         article_data=article,
-                        counter=i,
-                        include_html_content=False
+                        counter=i,                        include_html_content=False
                     )
                 else:
                     # Fallback to old method if no URL
@@ -547,8 +547,22 @@ class FileManager:
                 if success:
                     filename = self._get_source_session_filename(domain)
                     saved_files.append(filename)
+            
+            # List workspace files after saving is completed
+            self.list_workspace_files()
                     
             return saved_files
         except Exception as e:
             logger.error(f"Error saving source session files: {e}")
             return saved_files
+
+    def list_workspace_files(self) -> None:
+        """List all files in the workspace directory for debugging."""
+        try:
+            if os.path.exists(self.base_data_dir):
+                files = os.listdir(self.base_data_dir)
+                logger.info(f"Workspace files in {self.base_data_dir}: {files}")
+            else:
+                logger.info(f"Workspace directory {self.base_data_dir} does not exist")
+        except Exception as e:
+            logger.error(f"Error listing workspace files: {e}")
