@@ -524,7 +524,8 @@ class FileManager:
                     self.save_article_by_url(
                         url=article_url,
                         article_data=article,
-                        counter=i,                        include_html_content=False
+                        counter=i,
+                        include_html_content=False
                     )
                 else:
                     # Fallback to old method if no URL

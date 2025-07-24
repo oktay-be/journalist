@@ -14,7 +14,7 @@ class JournalistConfig:
     IS_LOCAL = os.getenv('ENVIRONMENT', 'local') == 'local'
       # Default values - environment dependent
     if IS_LOCAL:
-        DEFAULT_BASE_WORKSPACE_PATH = ".journalist_workspace"
+        DEFAULT_BASE_WORKSPACE_PATH = "/tmp/.journalist_workspace"
     else:
         DEFAULT_BASE_WORKSPACE_PATH = "/tmp/.journalist_workspace"
     
