@@ -295,6 +295,7 @@ class Journalist:
                 logging.getLogger('src.journalist.core.session_manager').setLevel(numeric_level)
                 logging.getLogger('src.journalist.core.web_scraper').setLevel(numeric_level)
                 logging.getLogger('src.journalist.core.link_discoverer').setLevel(numeric_level)
+                logging.getLogger('src.journalist.core.file_manager').setLevel(numeric_level)
                 logging.getLogger('src.journalist.core.content_extractor').setLevel(numeric_level)
                 logger.info(f"Log level set to {log_level.upper()} for this session")
             except AttributeError:

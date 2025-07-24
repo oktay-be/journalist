@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "journ4list"
-version = "0.10.0"
+version = "0.11.0"
 description = "A powerful async news content extraction library with modern API for web scraping and article analysis"
 authors = ["Oktay Burak Ertas <oktay.burak.ertas@gmail.com>"]
 maintainers = ["Oktay Burak Ertas <oktay.burak.ertas@gmail.com>"]
