@@ -453,6 +453,10 @@ class FileManager:
             # Add domain metadata if not already present
             if 'source_domain' not in session_data:
                 session_data['source_domain'] = domain
+
+            # Add file_path if not already present
+            if 'file_path' not in session_data:
+                session_data['file_path'] = file_path
             
             # Add timestamp if not already present
             if 'saved_at' not in session_data:
