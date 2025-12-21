@@ -49,12 +49,15 @@ class WebScraper:
             session_id: Unique identifier for this scraping session
             keywords: Keywords to search for
             sites: Optional list of specific sites to scrape
-            scrape_depth: Depth level for link discovery (default: 1)
+            scrape_depth: Depth level for link discovery:
+                - 0: Only scrape the provided URLs directly (no link discovery)
+                - 1: Scrape provided URLs + discover and scrape links from those pages
+                - 2+: Continue recursive discovery
             
         Returns:
             Dict containing scraped articles and session metadata        """
         session_start = datetime.now()
-        logger.info("Starting scraping session %s with keywords: %s", session_id, keywords)
+        logger.info("Starting scraping session %s with keywords: %s, scrape_depth: %d", session_id, keywords, scrape_depth)
         
         try:
             # No session caching - always perform fresh scraping
@@ -62,45 +65,50 @@ class WebScraper:
             # Get sites to scrape
             target_sites = sites or list(self.config.site_specific_selectors.keys())
             
-            # Discover links
-            all_links_raw = [] # Renamed to indicate raw links before processing
-            async with self.session_manager: # SessionManager handles session start/stop
-                # tasks = [self._discover_links_for_site(site, keywords) for site in target_sites]
-                # results = await asyncio.gather(*tasks, return_exceptions=True)
-                # for i, result in enumerate(results):
-                #     if isinstance(result, list):
-                #         all_links_raw.extend(result)
-                #         logger.info(f"Found {len(result)} raw links from {target_sites[i]}")
-                #     elif isinstance(result, Exception):                #         logger.error(f"Failed to discover links from {target_sites[i]}: {result}")
-                
-                for site in target_sites:  # Sequential discovery per site for now
-                    try:
-                        site_links = await self._discover_links_for_site(site, keywords, scrape_depth)
-                        all_links_raw.extend(site_links)
-                        logger.info("Discovered %d links from %s", len(site_links), site)
-                    except Exception as e:
-                        logger.error("Failed to discover links from %s: %s", site, e)
+            # When scrape_depth=0, skip link discovery and scrape provided URLs directly
+            if scrape_depth == 0:
+                logger.info("scrape_depth=0: Skipping link discovery, will scrape %d provided URLs directly", len(target_sites))
+                processed_links = []
+                for site in target_sites:
+                    normalized = normalize_url(site)
+                    if is_valid_url(normalized):
+                        if normalized not in processed_links:
+                            processed_links.append(normalized)
+                    else:
+                        logger.warning(f"Skipping invalid provided URL: {site}")
+            else:
+                # Discover links (scrape_depth >= 1)
+                all_links_raw = [] # Renamed to indicate raw links before processing
+                async with self.session_manager: # SessionManager handles session start/stop
+                    for site in target_sites:  # Sequential discovery per site for now
+                        try:
+                            # Pass scrape_depth - 1 to link discoverer since we're already at level 0 (the provided URLs)
+                            site_links = await self._discover_links_for_site(site, keywords, scrape_depth - 1)
+                            all_links_raw.extend(site_links)
+                            logger.info("Discovered %d links from %s", len(site_links), site)
+                        except Exception as e:
+                            logger.error("Failed to discover links from %s: %s", site, e)
 
-            if not all_links_raw:
-                logger.warning("No raw links discovered for session %s", session_id)
-                return {'articles': [], 'session_metadata': self._create_session_metadata(session_id, session_start, 0, 0)}
-            
-            logger.info("Total %d raw links discovered across all sites", len(all_links_raw))
-            
-            # Normalize and filter discovered links
-            processed_links = []
-            for link_info in all_links_raw: # Assuming _discover_links_for_site now returns list of dicts
-                url = link_info.get('url')
-                if not url:
-                    logger.warning(f"Link info missing 'url': {link_info}")
-                    continue
+                if not all_links_raw:
+                    logger.warning("No raw links discovered for session %s", session_id)
+                    return {'articles': [], 'session_metadata': self._create_session_metadata(session_id, session_start, 0, 0)}
                 
-                normalized = normalize_url(url)
-                if is_valid_url(normalized):
-                    if normalized not in processed_links: # Ensure uniqueness after normalization
-                        processed_links.append(normalized)
-                else:
-                    logger.warning(f"Skipping invalid or non-normalizable URL: {url} (normalized: {normalized})")
+                logger.info("Total %d raw links discovered across all sites", len(all_links_raw))
+                
+                # Normalize and filter discovered links
+                processed_links = []
+                for link_info in all_links_raw: # Assuming _discover_links_for_site now returns list of dicts
+                    url = link_info.get('url')
+                    if not url:
+                        logger.warning(f"Link info missing 'url': {link_info}")
+                        continue
+                    
+                    normalized = normalize_url(url)
+                    if is_valid_url(normalized):
+                        if normalized not in processed_links: # Ensure uniqueness after normalization
+                            processed_links.append(normalized)
+                    else:
+                        logger.warning(f"Skipping invalid or non-normalizable URL: {url} (normalized: {normalized})")
 
             if not processed_links:
                 logger.warning(f"No valid links remaining after normalization and filtering for session {session_id}")
@@ -108,11 +116,11 @@ class WebScraper:
 
             logger.info(f"Normalized and filtered to {len(processed_links)} unique, valid links.")
             
-            # Scrape content from discovered links
+            # Scrape content from links (use session_manager context for HTTP sessions)
             scraped_articles = []
-            # Session is already managed by the outer context manager
-            tasks = [self._scrape_single_article(link, keywords, index + 1) for index, link in enumerate(processed_links)] # Add enumerate and pass index + 1
-            results = await asyncio.gather(*tasks, return_exceptions=True)
+            async with self.session_manager:  # Ensure session is active for scraping
+                tasks = [self._scrape_single_article(link, keywords, index + 1) for index, link in enumerate(processed_links)]
+                results = await asyncio.gather(*tasks, return_exceptions=True)
             
             for result in results:
                 if isinstance(result, dict) and result:
