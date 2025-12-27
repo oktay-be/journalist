@@ -12,7 +12,14 @@ from .config import JournalistConfig
 logger = logging.getLogger(__name__)
 
 class Journalist:
-    def __init__(self, persist: bool = True, scrape_depth: int = 1):
+    def __init__(
+        self, 
+        persist: bool = True, 
+        scrape_depth: int = 1,
+        browserless_url: Optional[str] = None,
+        browserless_token: Optional[str] = None,
+        max_scrolls: int = 20
+    ):
         """
         Initialize the Journalist.
 
@@ -20,18 +27,33 @@ class Journalist:
             persist (bool): If True, create filesystem workspace and save data.
                            If False, operate in memory only without file persistence.
             scrape_depth (int): Depth level for link discovery (default: 1)
+            browserless_url (str, optional): URL of Browserless service for JS-heavy pages.
+                           Enables headless Chrome rendering for infinite scroll pages.
+                           Requires browserless_token to be set as well.
+            browserless_token (str, optional): Authentication token for Browserless API.
+                           Required when browserless_url is provided.
+            max_scrolls (int): Maximum scroll iterations for infinite scroll pages (default: 20).
+                           Only used when Browserless is enabled.
         """
         # Generate session_id like in original routes.py
         self.session_id = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-          # Store new parameters
+        
+        # Store parameters
         self.persist = persist
         self.scrape_depth = scrape_depth
+        self.browserless_url = browserless_url
+        self.browserless_token = browserless_token
+        self.max_scrolls = max_scrolls
         
         # Initialize in-memory storage attributes for type safety
         self.memory_articles = []
         
-        # Initialize the web scraper (gets config from central config)
-        self.web_scraper = WebScraper()
+        # Initialize the web scraper with browserless config
+        self.web_scraper = WebScraper(
+            browserless_url=browserless_url,
+            browserless_token=browserless_token,
+            max_scrolls=max_scrolls
+        )
 
         if self.persist:
             # Setup persistent workspace
@@ -40,8 +62,11 @@ class Journalist:
             # Setup in-memory storage
             self._setup_memory_storage()
         
-        logger.info("Journalist initialized with session_id: %s, persist: %s, scrape_depth: %s", 
-                   self.session_id, persist, scrape_depth)
+        browserless_status = "enabled" if browserless_url and browserless_token else "disabled"
+        logger.info(
+            "Journalist initialized with session_id: %s, persist: %s, scrape_depth: %s, browserless: %s", 
+            self.session_id, persist, scrape_depth, browserless_status
+        )
 
     def _setup_persistent_workspace(self):
         """Setup persistent filesystem workspace"""

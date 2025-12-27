@@ -21,24 +21,45 @@ logger = logging.getLogger(__name__)
 
 class WebScraper:
     """
-    Modular web scraper that orchestrates all scraping components
+    Modular web scraper that orchestrates all scraping components.
+    
+    Supports optional Browserless integration for JavaScript-heavy pages.
     """
     
-    def __init__(self):
+    def __init__(
+        self,
+        browserless_url: Optional[str] = None,
+        browserless_token: Optional[str] = None,
+        max_scrolls: int = 20
+    ):
         """
-        Initialize the modular web scraper using central configuration
-        """        # Initialize components
+        Initialize the modular web scraper.
+        
+        Args:
+            browserless_url: Optional URL of Browserless service for JS rendering
+            browserless_token: Optional auth token for Browserless API
+            max_scrolls: Max scroll iterations for infinite scroll pages (default: 20)
+        """
+        # Initialize components
         self.config = ScrapingConfig()
-        self.session_manager = SessionManager(self.config)
+        
+        # Pass browserless config to session manager
+        self.session_manager = SessionManager(
+            config=self.config,
+            browserless_url=browserless_url,
+            browserless_token=browserless_token,
+            max_scrolls=max_scrolls
+        )
+        
         self.link_discoverer = LinkDiscoverer(max_concurrent_tasks=3, config=self.config)
         self.content_extractor = ContentExtractor(self.config)
-        # Removed FileManager - no longer saving session data to cache
         
         # Semaphores for concurrency control
         self.discover_semaphore = asyncio.Semaphore(3)
         self.scrape_semaphore = asyncio.Semaphore(5)
         
-        logger.info("Modular web scraper initialized")
+        browserless_status = "enabled" if self.session_manager.browserless_enabled else "disabled"
+        logger.info("Modular web scraper initialized (Browserless: %s)", browserless_status)
     
     async def execute_scraping_for_session(self, session_id: str, keywords: List[str], 
                                          sites: Optional[List[str]] = None, scrape_depth: int = 1) -> Dict[str, Any]:

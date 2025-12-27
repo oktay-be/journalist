@@ -4,9 +4,51 @@ Configuration management for web scraping.
 
 import os
 import json
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 
+# =============================================================================
+# JavaScript-Heavy URL Detection
+# =============================================================================
+
+# URL patterns that indicate pages requiring browser rendering (JavaScript execution)
+# These patterns typically use infinite scroll or dynamic content loading
+JS_HEAVY_PATTERNS: List[str] = [
+    '/foto-galeri/',      # Turkish: photo gallery
+    '/fotogaleri/',       # Turkish: photo gallery (no hyphen)
+    '/galeri/',           # Turkish: gallery
+    '/photo-gallery/',    # English: photo gallery
+    '/slideshow/',        # Slideshow pages
+    '/photos/',           # Photo collection pages
+    '/gallery/',          # English: gallery
+]
+
+
+def should_use_browserless(url: str, custom_patterns: Optional[List[str]] = None) -> bool:
+    """
+    Detect if a URL requires browser rendering for full content extraction.
+    
+    JavaScript-heavy pages (photo galleries, infinite scroll, etc.) need
+    a real browser to render dynamic content that aiohttp cannot fetch.
+    
+    Args:
+        url: The URL to check
+        custom_patterns: Optional additional patterns to check (extends defaults)
+        
+    Returns:
+        True if the URL matches a JS-heavy pattern and should use Browserless
+    """
+    patterns = JS_HEAVY_PATTERNS.copy()
+    if custom_patterns:
+        patterns.extend(custom_patterns)
+    
+    url_lower = url.lower()
+    return any(pattern.lower() in url_lower for pattern in patterns)
+
+
+# =============================================================================
+# Scraping Configuration
+# =============================================================================
 class ScrapingConfig:
     """Configuration class for web scraping operations."""
     
