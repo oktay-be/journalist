@@ -1,0 +1,22 @@
+name: Publish Python 🐍 journ4list 📦 to PyPI
+
+on:
+  push:
+    tags:
+      - "*.*.*" # Trigger on tags like 1.0.0, 0.1.0, etc.
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: python -m pip install build
+      - run: python -m build
+      - uses: pypa/gh-action-pypi-publish@release/v1
+      
