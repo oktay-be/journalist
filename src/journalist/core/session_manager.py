@@ -1,5 +1,13 @@
 """
 HTTP session management for web scraping.
+
+Supports two fetching modes:
+1. aiohttp (default): Fast, cheap, static HTML only
+2. Browserless (opt-in): Headless Chrome for JavaScript-heavy pages
+
+Browserless is only used when:
+- User provides browserless_url AND browserless_token
+- URL matches JS_HEAVY_PATTERNS (e.g., /foto-galeri/)
 """
 
 import asyncio
@@ -7,25 +15,54 @@ import logging
 import aiohttp
 from typing import Optional, Any, Dict
 
-# Assuming ScrapingConfig is in a file named config.py in the same directory
-from .config import ScrapingConfig
+from .config import ScrapingConfig, should_use_browserless
+from .browserless_client import BrowserlessClient
 
 logger = logging.getLogger(__name__)
 
 
 class SessionManager:
-    """Manages HTTP sessions for web scraping."""
+    """Manages HTTP sessions for web scraping with optional Browserless support."""
 
-    def __init__(self, config: ScrapingConfig):
+    def __init__(
+        self, 
+        config: ScrapingConfig,
+        browserless_url: Optional[str] = None,
+        browserless_token: Optional[str] = None,
+        max_scrolls: int = 20
+    ):
         """
         Initializes the SessionManager.
 
         Args:
             config: ScrapingConfig object for session settings.
+            browserless_url: Optional URL of Browserless service (enables JS rendering)
+            browserless_token: Optional auth token for Browserless API (required with URL)
+            max_scrolls: Max scroll iterations for infinite scroll pages (default: 20)
         """
         self.config = config
         self._session: Optional[aiohttp.ClientSession] = None
-        logger.info("SessionManager initialized.")
+        
+        # Initialize Browserless client if credentials provided
+        self._browserless_client: Optional[BrowserlessClient] = None
+        if browserless_url and browserless_token:
+            try:
+                self._browserless_client = BrowserlessClient(
+                    browserless_url=browserless_url,
+                    browserless_token=browserless_token,
+                    max_scrolls=max_scrolls
+                )
+                logger.info("SessionManager initialized with Browserless support enabled.")
+            except ValueError as e:
+                logger.warning("Failed to initialize BrowserlessClient: %s", e)
+                self._browserless_client = None
+        else:
+            logger.info("SessionManager initialized (Browserless disabled - no credentials provided).")
+
+    @property
+    def browserless_enabled(self) -> bool:
+        """Check if Browserless is configured and available."""
+        return self._browserless_client is not None and self._browserless_client.is_available()
 
     async def get_session(self) -> aiohttp.ClientSession:
         """
@@ -54,7 +91,41 @@ class SessionManager:
 
     async def fetch_content(self, url: str, retries: int = 3, retry_delay: int = 1) -> Optional[str]:
         """
-        Fetches content from a URL using the managed session.
+        Fetches content from a URL, automatically routing to Browserless for JS-heavy pages.
+
+        Routing logic:
+        1. If Browserless is enabled AND URL matches JS_HEAVY_PATTERNS → use Browserless
+        2. Otherwise → use standard aiohttp (faster, cheaper)
+        
+        If Browserless fails, automatically falls back to aiohttp.
+
+        Args:
+            url: The URL to fetch content from.
+            retries: Number of times to retry on failure (for aiohttp).
+            retry_delay: Delay in seconds between retries (for aiohttp).
+
+        Returns:
+            The page content as a string if successful, None otherwise.
+        """
+        # Check if we should use Browserless for this URL
+        if self.browserless_enabled and should_use_browserless(url):
+            logger.info("URL matches JS-heavy pattern, routing to Browserless: %s", url)
+            
+            # Try Browserless with fallback to aiohttp
+            async def aiohttp_fallback(fallback_url: str) -> Optional[str]:
+                return await self._fetch_with_aiohttp(fallback_url, retries, retry_delay)
+            
+            return await self._browserless_client.fetch_with_fallback(
+                url=url,
+                fallback_fetcher=aiohttp_fallback
+            )
+        else:
+            # Standard aiohttp fetch
+            return await self._fetch_with_aiohttp(url, retries, retry_delay)
+
+    async def _fetch_with_aiohttp(self, url: str, retries: int = 3, retry_delay: int = 1) -> Optional[str]:
+        """
+        Fetches content from a URL using aiohttp (standard HTTP client).
 
         Args:
             url: The URL to fetch content from.
